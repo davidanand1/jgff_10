@@ -1,0 +1,214 @@
+/* ================================================
+   JG&FF TEAMS PAGE
+================================================ */
+
+/* ── Teams Grid ── */
+.teams-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: var(--space-md);
+}
+
+.team-btn {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    color: var(--text-primary);
+    font-family: var(--font-serif);
+    font-size: 1.1rem;
+    padding: var(--space-xl) var(--space-lg);
+    cursor: pointer;
+    transition: all var(--transition);
+    text-align: center;
+    width: 100%;
+}
+
+.team-btn:hover {
+    border-color: var(--gold);
+    background: var(--gold-subtle);
+    color: var(--gold);
+    box-shadow: var(--shadow-gold);
+    transform: translateY(-2px);
+}
+
+.team-btn-skeleton {
+    height: 100px;
+    border-radius: var(--radius-lg);
+}
+
+/* ── Team Hero ── */
+.team-hero {
+    display: flex;
+    align-items: center;
+    gap: var(--space-lg);
+    padding: var(--space-lg) 0;
+}
+
+.team-logo {
+    width: 100px;
+    height: 100px;
+    object-fit: contain;
+    border-radius: var(--radius-md);
+}
+
+.team-name {
+    font-family: var(--font-serif);
+    font-size: clamp(1.8rem, 4vw, 3rem);
+    color: var(--text-primary);
+}
+
+/* ── Stats Grid ── */
+.team-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: var(--space-md);
+    margin-bottom: var(--space-xl);
+}
+
+.stat-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    padding: var(--space-lg);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+}
+
+.stat-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--gold);
+}
+
+.stat-value {
+    font-family: var(--font-serif);
+    font-size: 1.4rem;
+    color: var(--text-primary);
+    font-weight: 700;
+}
+
+/* ── Team Section ── */
+.team-section {
+    margin-bottom: var(--space-2xl);
+}
+
+/* ── Trophies ── */
+.trophies-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-lg);
+}
+
+.trophy-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-sm);
+}
+
+.trophy-img {
+    width: 80px;
+    height: 80px;
+    object-fit: contain;
+    filter: drop-shadow(0 4px 8px rgba(201, 168, 76, 0.3));
+}
+
+.trophy-year {
+    font-family: var(--font-serif);
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--gold);
+}
+
+.trophy-year-championship {
+    font-family: var(--font-serif);
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--gold);
+}
+
+/* ── Awards ── */
+.awards-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+}
+
+.award-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    padding: var(--space-sm) 0;
+    color: var(--text-primary);
+    font-size: 0.95rem;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.award-item:last-child {
+    border-bottom: none;
+}
+
+.award-item::before {
+    content: '★';
+    color: var(--gold);
+    font-size: 0.8rem;
+    flex-shrink: 0;
+}
+
+/* ── Responsive ── */
+@media (max-width: 480px) {
+    .teams-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .team-hero {
+        flex-direction: column;
+        text-align: center;
+    }
+
+    .team-stats-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+/* ── Trophy Case ── */
+.trophy-case-header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    margin-bottom: var(--space-xl);
+}
+
+.trophy-case-title {
+    font-family: var(--font-serif);
+    font-size: clamp(1.8rem, 4vw, 2.5rem);
+    color: var(--text-primary);
+    margin-bottom: var(--space-md);
+}
+
+.trophy-case-underline {
+    width: clamp(60px, 20vw, 200px);
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--gold), transparent);
+    border-radius: 2px;
+}
+
+.trophy-subsection {
+    margin-bottom: var(--space-xl);
+}
+
+.trophy-subtitle {
+    font-family: var(--font-serif);
+    font-size: 1.2rem;
+    color: var(--gold);
+    margin-bottom: var(--space-lg);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    font-size: 0.85rem;
+    font-weight: 600;
+}

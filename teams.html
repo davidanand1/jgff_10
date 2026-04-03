@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JG&FF | Teams</title>
+    <meta name="description" content="JG&FF Fantasy Football League — Teams">
+    <link rel="icon" href="/assets/favicon.ico" type="image/x-icon">
+    <link rel="stylesheet" href="/css/global.css">
+    <link rel="stylesheet" href="/css/nav.css">
+    <link rel="stylesheet" href="/css/teams.css">
+</head>
+<body>
+    <div class="page-wrapper">
+
+        <!-- ── MAIN TEAMS VIEW ── -->
+        <div id="teamsView">
+            <section class="page-header">
+                <div class="container">
+                    <h1 class="page-title">Teams</h1>
+                    <div class="gold-divider"></div>
+                </div>
+            </section>
+
+            <section class="section">
+                <div class="container">
+                    <div id="teamsGrid" class="teams-grid">
+                        <!-- Skeleton loaders -->
+                        ${Array(12).fill('<div class="skeleton team-btn-skeleton"></div>').join('')}
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- ── INDIVIDUAL TEAM VIEW ── -->
+        <div id="teamView" style="display:none;">
+            <section class="page-header">
+                <div class="container">
+                    <button class="btn btn-back" id="backBtn">← Back to Teams</button>
+                    <div class="team-header" id="teamHeader">
+                        <div class="skeleton skeleton-card" style="height:120px;"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="section">
+                <div class="container" id="teamContent">
+                    <div class="skeleton skeleton-card"></div>
+                </div>
+            </section>
+        </div>
+
+    </div>
+
+    <!-- Scripts -->
+    <script src="/js/config.js"></script>
+    <script src="/js/nav.js"></script>
+    <script type="module">
+        (async () => {
+            await new Promise(resolve => {
+                if (document.readyState === 'complete') resolve();
+                else window.addEventListener('load', resolve);
+            });
+
+            const { GOOGLE_API_KEY, GOOGLE_SHEETS_ID } = window.CONFIG;
+
+            // ── Fetch sheet tab names ──
+            async function fetchSheetTabs() {
+                const url = `https://sheets.googleapis.com/v4/spreadsheets/${GOOGLE_SHEETS_ID}?key=${GOOGLE_API_KEY}`;
+                const res = await fetch(url);
+                const data = await res.json();
+                return data.sheets.map(s => s.properties.title);
+            }
+
+            // ── Fetch a range from a sheet tab ──
+            async function fetchRange(tab, range) {
+                const encoded = encodeURIComponent(`${tab}!${range}`);
+                const url = `https://sheets.googleapis.com/v4/spreadsheets/${GOOGLE_SHEETS_ID}/values/${encoded}?key=${GOOGLE_API_KEY}`;
+                const res = await fetch(url);
+                const data = await res.json();
+                return data.values || [];
+            }
+
+            // ── Fetch entire tab ──
+            async function fetchTab(tab) {
+                const encoded = encodeURIComponent(tab);
+                const url = `https://sheets.googleapis.com/v4/spreadsheets/${GOOGLE_SHEETS_ID}/values/${encoded}?key=${GOOGLE_API_KEY}`;
+                const res = await fetch(url);
+                const data = await res.json();
+                return data.values || [];
+            }
+
+            // ── Known system tabs to exclude ──
+// ── Tabs to exclude ──
+const EXCLUDE_TABS = [
+    'HOME',
+    'RECORD ROOM',
+    'History',
+    'Playoff History',
+    'Rivalry Schedule',
+    'Defunct',
+    'SEASON HISTORY',
+    'GLORIA IN EXKELCES DEO',
+    'MATCHUP HISTORY',
+    'Sleeper',
+    'Anand v. Domingo',
+    'Cookies & Cream Classic',
+    'Eagle Tavern Tussle',
+    'Edgewood Escapade',
+    'Good Guys\' Game',
+    'Little Rocky Rumble',
+    'Mike & Dave Classic',
+    'Salute To Service Bowl',
+    'TBD',
+    'The Civil War',
+    'The King\'s Cup',
+    'WCI Derby'
+];
+
+// ── Init Teams Grid ──
+async function initTeams() {
+    const tabs = await fetchSheetTabs();
+    const teamTabs = tabs.filter(t => !EXCLUDE_TABS.includes(t));
+
+                const grid = document.getElementById('teamsGrid');
+                grid.innerHTML = teamTabs.map(tab => `
+                    <button class="team-btn" onclick="openTeam('${tab.replace(/'/g, "\\'")}')">
+                        ${tab}
+                    </button>
+                `).join('');
+
+                // Expose openTeam globally
+                window.openTeam = (tabName) => loadTeamPage(tabName);
+            }
+
+            // ── Load Individual Team Page ──
+            async function loadTeamPage(tabName) {
+                // Switch views
+                document.getElementById('teamsView').style.display = 'none';
+                document.getElementById('teamView').style.display = 'block';
+                window.scrollTo(0, 0);
+
+                // Show loading state
+                document.getElementById('teamHeader').innerHTML = '<div class="skeleton skeleton-card" style="height:120px;"></div>';
+                document.getElementById('teamContent').innerHTML = '<div class="skeleton skeleton-card"></div>';
+
+                const rows = await fetchTab(tabName);
+
+                if (!rows.length) {
+                    document.getElementById('teamContent').innerHTML = '<p style="color:var(--text-muted)">No data found.</p>';
+                    return;
+                }
+
+                // ── Parse Stats Block (A1:A5) ──
+                const teamName = rows[0]?.[0] || tabName;
+                const headCoach = rows[1]?.[0] || '—';
+                const playoffAppearances = rows[2]?.[1] || '—';
+                const playoffRecord = rows[3]?.[1] || '—';
+                const allTimeRecord = rows[4]?.[1] || '—';
+
+                // ── Team Header ──
+                const logoPath = `/assets/logos/${tabName.replace(/\s+/g, '_')}.png`;
+                document.getElementById('teamHeader').innerHTML = `
+                    <div class="team-hero">
+                        <img src="${logoPath}" 
+                             alt="${teamName} logo" 
+                             class="team-logo"
+                             onerror="this.style.display='none'">
+                        <h1 class="team-name">${teamName}</h1>
+                    </div>
+                `;
+
+                // ── Parse remaining rows ──
+                let franchiseTable = [];
+                let championships = [];
+                let divisions = [];
+                let awards = [];
+                let currentSection = null;
+                let franchiseStarted = false;
+
+                for (let i = 9; i < rows.length; i++) {
+                    const row = rows[i];
+                    const cellA = (row?.[0] || '').trim().toLowerCase();
+
+                    if (!row || row.every(c => !c || !c.trim())) {
+                        // Blank row — reset section if we were in one
+                        if (currentSection === 'franchise' && franchiseTable.length > 0) {
+                            // keep going, blank row ends franchise
+                            currentSection = null;
+                        }
+                        continue;
+                    }
+
+                    if (cellA === 'championships') {
+    currentSection = 'championships';
+    i++; // skip the "Year" header row
+    continue;
+}
+if (cellA === 'divisions') {
+    currentSection = 'divisions';
+    i++; // skip the "Year" header row
+    continue;
+}
+                    if (cellA === 'awards') {
+                        currentSection = 'awards';
+                        continue;
+                    }
+
+                    // Franchise History starts at row index 9 (A10)
+                    if (i === 9 && !franchiseStarted) {
+                        currentSection = 'franchise';
+                        franchiseStarted = true;
+                    }
+
+                    if (currentSection === 'franchise') {
+                        franchiseTable.push(row);
+                    } else if (currentSection === 'championships') {
+                        championships.push(row);
+                    } else if (currentSection === 'divisions') {
+                        divisions.push(row);
+                    } else if (currentSection === 'awards') {
+                        awards.push(row);
+                    }
+                }
+
+                // ── Render Content ──
+                document.getElementById('teamContent').innerHTML = `
+                    <!-- Stats Block -->
+                    <div class="team-stats-grid">
+                        <div class="stat-card">
+                            <span class="stat-label">Head Coach</span>
+                            <span class="stat-value">${headCoach}</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-label">Playoff Appearances</span>
+                            <span class="stat-value">${playoffAppearances}</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-label">Playoff Record</span>
+                            <span class="stat-value">${playoffRecord}</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-label">All-Time Record</span>
+                            <span class="stat-value">${allTimeRecord}</span>
+                        </div>
+                    </div>
+
+                    <!-- Franchise History Table -->
+                    ${franchiseTable.length > 0 ? `
+                        <div class="team-section">
+                            <h2 class="section-title">Franchise History</h2>
+                            <div class="table-wrapper">
+                                ${renderTable(franchiseTable)}
+                            </div>
+                        </div>
+                    ` : ''}
+
+<!-- Trophy Case -->
+${championships.length > 0 || divisions.length > 0 || awards.length > 0 ? `
+    <div class="team-section">
+        <div class="trophy-case-header">
+            <h2 class="trophy-case-title">Trophy Case</h2>
+            <div class="trophy-case-underline"></div>
+        </div>
+
+        ${championships.length > 0 ? `
+            <div class="trophy-subsection">
+                <h3 class="trophy-subtitle">Championships</h3>
+                <div class="trophies-grid">
+                    ${championships.map(row => row[0] ? `
+                        <div class="trophy-item">
+                            <img src="/assets/trophy.png" alt="Championship Trophy" class="trophy-img">
+                            <span class="trophy-year-championship">${row[0]}</span>
+                        </div>
+                    ` : '').join('')}
+                </div>
+            </div>
+        ` : ''}
+
+        ${divisions.length > 0 ? `
+            <div class="trophy-subsection">
+                <h3 class="trophy-subtitle">Division Titles</h3>
+                <div class="trophies-grid">
+                    ${divisions.map(row => row[0] ? `
+                        <div class="trophy-item">
+                            <img src="/assets/division.png" alt="Division Trophy" class="trophy-img">
+                            <span class="trophy-year">${row[0]}</span>
+                        </div>
+                    ` : '').join('')}
+                </div>
+            </div>
+        ` : ''}
+
+        ${awards.length > 0 ? `
+            <div class="trophy-subsection">
+                <h3 class="trophy-subtitle">Awards</h3>
+                <ul class="awards-list">
+                    ${awards.map(row => row[0] ? `
+                        <li class="award-item">${row[0]}</li>
+                    ` : '').join('')}
+                </ul>
+            </div>
+        ` : ''}
+    </div>
+` : ''}
+                `;
+            }
+
+            // ── Render Table Helper ──
+            function renderTable(rows) {
+    if (!rows.length) return '';
+    const [header, ...body] = rows;
+    // Find the max number of columns across all rows
+    const maxCols = Math.max(...rows.map(r => r.length));
+    return `
+        <table>
+            <thead>
+                <tr>
+                    ${Array.from({length: maxCols}, (_, i) => `<th>${header[i] || ''}</th>`).join('')}
+                </tr>
+            </thead>
+            <tbody>
+                ${body.map(row => `
+                    <tr>
+                        ${Array.from({length: maxCols}, (_, i) => `<td>${row[i] || ''}</td>`).join('')}
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    `;
+}
+
+            // ── Back Button ──
+            document.getElementById('backBtn').addEventListener('click', () => {
+                document.getElementById('teamView').style.display = 'none';
+                document.getElementById('teamsView').style.display = 'block';
+                window.scrollTo(0, 0);
+            });
+
+            // ── Init ──
+            initTeams();
+
+        })();
+    </script>
+</body>
+</html>

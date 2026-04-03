@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JG&FF | Media</title>
+    <meta name="description" content="JG&FF Fantasy Football League — Media">
+    <link rel="icon" href="/assets/favicon.ico" type="image/x-icon">
+    <link rel="stylesheet" href="/css/global.css">
+    <link rel="stylesheet" href="/css/nav.css">
+    <link rel="stylesheet" href="/css/media.css">
+</head>
+<body>
+    <div class="page-wrapper">
+
+        <!-- ── HEADER ── -->
+        <section class="page-header">
+            <div class="container">
+                <h1 class="page-title">Media</h1>
+                <div class="gold-divider"></div>
+            </div>
+        </section>
+
+        <!-- ── PODCAST SECTION ── -->
+        <section class="section">
+            <div class="container">
+                <h2 class="section-title">Podcast</h2>
+
+                <!-- Featured Episode -->
+                <div id="featuredPodcast" class="featured-podcast card">
+                    <div class="skeleton skeleton-card"></div>
+                </div>
+
+                <!-- Previous Episodes -->
+                <div id="previousPodcasts" class="podcast-list">
+                    <div class="skeleton skeleton-text"></div>
+                    <div class="skeleton skeleton-text"></div>
+                    <div class="skeleton skeleton-text"></div>
+                    <div class="skeleton skeleton-text"></div>
+                    <div class="skeleton skeleton-text"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ── WEEKLY RECAPS SECTION ── -->
+        <section class="section section-dark">
+            <div class="container">
+                <h2 class="section-title">Weekly Recaps</h2>
+                <div id="recapsGrid" class="articles-grid">
+                    <div class="skeleton skeleton-card"></div>
+                    <div class="skeleton skeleton-card"></div>
+                    <div class="skeleton skeleton-card"></div>
+                </div>
+            </div>
+        </section>
+
+    </div>
+
+    <!-- Scripts -->
+    <script src="/js/config.js"></script>
+    <script src="/js/nav.js"></script>
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js';
+
+        (async () => {
+            await new Promise(resolve => {
+                if (document.readyState === 'complete') resolve();
+                else window.addEventListener('load', resolve);
+            });
+
+            const { GOOGLE_API_KEY, DRIVE_FOLDERS } = window.CONFIG;
+
+            // ── Podcast ──
+            async function fetchPodcasts() {
+                try {
+                    const url = `https://www.googleapis.com/drive/v3/files?q='${DRIVE_FOLDERS.PODCASTS}'+in+parents&orderBy=name+desc&fields=files(id,name,mimeType,createdTime)&key=${GOOGLE_API_KEY}`;
+                    const res = await fetch(url);
+                    const data = await res.json();
+                    const files = (data.files || []).filter(f =>
+                        f.mimeType.startsWith('audio/') ||
+                        f.name.match(/\.(mp3|m4a|wav|ogg)$/i)
+                    );
+
+                    if (files.length === 0) {
+                        document.getElementById('featuredPodcast').innerHTML = '<p style="color:var(--text-muted)">No episodes yet.</p>';
+                        document.getElementById('previousPodcasts').innerHTML = '';
+                        return;
+                    }
+
+                    // Featured episode
+                    const featured = files[0];
+                    const featuredTitle = formatPodcastTitle(featured.name);
+                    const featuredDate = extractPodcastDate(featured.name);
+
+                    document.getElementById('featuredPodcast').innerHTML = `
+                        <div class="featured-podcast-inner">
+                            <div class="podcast-featured-info">
+                                <span class="article-tag">Latest Episode</span>
+                                <h2 class="podcast-featured-title">${featuredTitle}</h2>
+                                ${featuredDate ? `<p class="podcast-date">${featuredDate}</p>` : ''}
+                            </div>
+                            <audio 
+                                controls 
+                                class="podcast-player"
+                                src="https://drive.google.com/uc?export=download&id=${featured.id}">
+                                Your browser does not support the audio element.
+                            </audio>
+                        </div>
+                    `;
+
+                    // Previous 5 episodes
+                    const previous = files.slice(1, 6);
+                    document.getElementById('previousPodcasts').innerHTML = previous.length > 0
+                        ? previous.map((f, i) => `
+                            <div class="podcast-row">
+                                <div class="podcast-row-info">
+                                    <span class="podcast-episode-num">${files.length - i - 1}</span>
+                                    <div class="podcast-row-text">
+                                        <span class="podcast-row-title">${formatPodcastTitle(f.name)}</span>
+                                        ${extractPodcastDate(f.name) ? `<span class="podcast-row-date">${extractPodcastDate(f.name)}</span>` : ''}
+                                    </div>
+                                </div>
+                                <audio 
+                                    controls 
+                                    class="podcast-player-small"
+                                    src="https://drive.google.com/uc?export=download&id=${f.id}">
+                                </audio>
+                            </div>
+                        `).join('')
+                        : '<p style="color:var(--text-muted)">No previous episodes.</p>';
+
+                } catch (err) {
+                    console.error('Podcast fetch error:', err);
+                }
+            }
+
+            // ── Weekly Recaps ──
+            async function fetchRecaps() {
+                try {
+                    const url = `https://www.googleapis.com/drive/v3/files?q='${DRIVE_FOLDERS.NEWS}'+in+parents+and+mimeType='application/pdf'&orderBy=createdTime+desc&fields=files(id,name,createdTime)&key=${GOOGLE_API_KEY}`;
+                    const res = await fetch(url);
+                    const data = await res.json();
+                    const files = (data.files || []).filter(f => f.name.includes('JGFF Week'));
+
+                    if (files.length === 0) {
+                        document.getElementById('recapsGrid').innerHTML = '<p style="color:var(--text-muted)">No recaps yet.</p>';
+                        return;
+                    }
+
+                    document.getElementById('recapsGrid').innerHTML = files.map(f => `
+                        <a href="https://drive.google.com/file/d/${f.id}/view"
+                           target="_blank" class="article-card card">
+                            <div class="article-meta">
+                                <span class="article-date">${formatDate(f.createdTime)}</span>
+                            </div>
+                            <h4 class="article-title">${cleanName(f.name)}</h4>
+                            <span class="article-link">Read →</span>
+                        </a>
+                    `).join('');
+
+                } catch (err) {
+                    console.error('Recaps fetch error:', err);
+                }
+            }
+
+            // ── Utilities ──
+            function formatPodcastTitle(filename) {
+                // Remove date prefix (mm.dd.yyyy_) and extension
+                return filename
+                    .replace(/^\d{2}\.\d{2}\.\d{4}_?/, '')
+                    .replace(/\.(mp3|m4a|wav|ogg)$/i, '')
+                    .replace(/[_-]/g, ' ')
+                    .trim();
+            }
+
+            function extractPodcastDate(filename) {
+                const match = filename.match(/^(\d{2})\.(\d{2})\.(\d{4})/);
+                if (!match) return null;
+                const [, month, day, year] = match;
+                return new Date(`${year}-${month}-${day}`).toLocaleDateString('en-US', {
+                    year: 'numeric', month: 'long', day: 'numeric'
+                });
+            }
+
+            function formatDate(dateStr) {
+                return new Date(dateStr).toLocaleDateString('en-US', {
+                    year: 'numeric', month: 'long', day: 'numeric'
+                });
+            }
+
+            function cleanName(filename) {
+                return filename.replace(/\.pdf$/i, '').replace(/[_-]/g, ' ');
+            }
+
+            // ── Init ──
+            fetchPodcasts();
+            fetchRecaps();
+
+        })();
+    </script>
+</body>
+</html>
