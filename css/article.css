@@ -15,9 +15,23 @@
     margin-top: var(--space-md);
 }
 
-/* ── Doc Content ── */
+.article-subtitle {
+    font-family: var(--font-serif);
+    font-size: clamp(1rem, 2vw, 1.3rem);
+    color: var(--text-secondary);
+    margin-top: var(--space-sm);
+    font-style: italic;
+}
+
 .article-body {
     margin-bottom: var(--space-2xl);
+}
+
+.doc-content {
+    color: var(--text-secondary);
+    line-height: 1.8;
+    font-size: 1rem;
+    font-family: var(--font-sans);
 }
 
 .doc-h1 {
@@ -55,8 +69,52 @@
     text-decoration: underline;
 }
 
+.doc-content table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.doc-content td, .doc-content th {
+    padding: var(--space-sm) var(--space-md);
+    border: 1px solid var(--border-subtle);
+    color: var(--text-primary);
+}
+
 /* ── Comments ── */
 .article-comments {
     border-top: 1px solid var(--border);
     padding-top: var(--space-2xl);
+}
+
+.article-comments .comment-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+    width: 100%;
+}
+
+.article-comments .input-field {
+    display: block;
+    width: 100%;
+    background: var(--bg-surface-3);
+    border: 1px solid var(--border-subtle);
+    color: var(--text-primary);
+}
+
+.article-comments .input-field:focus {
+    border-color: var(--gold);
+    background: var(--bg-surface-2);
+    outline: none;
+}
+
+.article-comments .input-field::placeholder {
+    color: var(--text-muted);
+}
+
+.article-comments input,
+.article-comments textarea {
+    background: var(--bg-surface-3) !important;
+    color: var(--text-primary) !important;
+    width: 100% !important;
+    display: block !important;
 }

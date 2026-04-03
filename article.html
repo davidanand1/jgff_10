@@ -96,101 +96,79 @@
             // ── Fetch Google Doc ──
             // ── Fetch Google Doc ──
             async function fetchDoc() {
-                try {
-                    const url = `https://www.googleapis.com/drive/v3/files/${docId}/export?mimeType=text/html&key=${GOOGLE_API_KEY}`;
-                    const res = await fetch(url);
+    try {
+        const url = `https://www.googleapis.com/drive/v3/files/${docId}/export?mimeType=text/html&key=${GOOGLE_API_KEY}`;
+        const res = await fetch(url);
 
-                    if (!res.ok) {
-                        document.getElementById('articleBody').innerHTML =
-                            '<p style="color:var(--text-muted)">Could not load article. Make sure the document is published to the web.</p>';
-                        return;
-                    }
+        if (!res.ok) {
+            document.getElementById('articleBody').innerHTML =
+                '<p style="color:var(--text-muted)">Could not load article. Make sure the document is published to the web.</p>';
+            return;
+        }
 
-                    const html = await res.text();
+        const html = await res.text();
 
-                    // Extract title
-                    const titleMatch = html.match(/<title>(.*?)<\/title>/);
-                    const title = titleMatch ? titleMatch[1] : 'Article';
-                    document.title = `JG&FF | ${title}`;
+        // Extract body content
+        const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+        const bodyContent = bodyMatch ? bodyMatch[1] : html;
 
-                    document.getElementById('articleHeader').innerHTML = `
-                        <h1 class="article-title">${title}</h1>
-                    `;
+        // Parse into a temporary DOM element
+        const parser = new DOMParser();
+        const docDom = parser.parseFromString(bodyContent, 'text/html');
 
-                    // Extract body content
-                    const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-                    const bodyContent = bodyMatch ? bodyMatch[1] : html;
+        // Strip all inline styles and Google classes
+        docDom.querySelectorAll('[style]').forEach(el => el.removeAttribute('style'));
+        docDom.querySelectorAll('[class]').forEach(el => el.removeAttribute('class'));
 
-                    document.getElementById('articleBody').innerHTML = `
-                        <div class="doc-content">${bodyContent}</div>
-                    `;
+        // Get all paragraphs/headings as text blocks
+        const blocks = Array.from(docDom.body.children);
 
-                } catch (err) {
-                    console.error('Doc fetch error:', err);
-                    document.getElementById('articleBody').innerHTML =
-                        '<p style="color:var(--text-muted)">Error loading article.</p>';
-                }
-            }
-            // ── Render Google Doc to HTML ──
-            function renderDoc(doc) {
-                if (!doc.body?.content) return '';
+        // First non-empty block = title
+        // Second non-empty block = subtitle
+        // Rest = body
+        const nonEmpty = blocks.filter(b => b.textContent.trim().length > 0);
+        console.log('blocks:', nonEmpty.map(b => ({ tag: b.tagName, text: b.textContent.trim().substring(0, 50) })));     
+           
+        const titleText = nonEmpty[0]?.textContent.trim() || 'Article';
+        const subtitleText = nonEmpty[1]?.textContent.trim() || '';
+        const bodyBlocks = nonEmpty.slice(2);
 
-                return doc.body.content.map(block => {
-                    if (block.paragraph) {
-                        return renderParagraph(block.paragraph);
-                    }
-                    if (block.table) {
-                        return renderDocTable(block.table);
-                    }
-                    return '';
-                }).join('');
-            }
+        // Update page title
+        document.title = `JG&FF | ${titleText}`;
 
-            function renderParagraph(para) {
-                const style = para.paragraphStyle?.namedStyleType || 'NORMAL_TEXT';
-                const text = (para.elements || []).map(el => renderElement(el)).join('');
+        // Render header
+        document.getElementById('articleHeader').innerHTML = `
+            <h1 class="article-title">${titleText}</h1>
+            ${subtitleText ? `<p class="article-subtitle">${subtitleText}</p>` : ''}
+        `;
 
-                if (!text.trim()) return '<br>';
+        // Render body
+        const bodyHtml = bodyBlocks.map(block => {
+            const tag = block.tagName?.toLowerCase();
+            const text = block.innerHTML;
+            if (!text.trim()) return '';
 
-                switch (style) {
-                    case 'HEADING_1': return `<h1 class="doc-h1">${text}</h1>`;
-                    case 'HEADING_2': return `<h2 class="doc-h2">${text}</h2>`;
-                    case 'HEADING_3': return `<h3 class="doc-h3">${text}</h3>`;
-                    default: return `<p class="doc-p">${text}</p>`;
-                }
-            }
+            if (tag === 'h1') return `<h1 class="doc-h1">${text}</h1>`;
+            if (tag === 'h2') return `<h2 class="doc-h2">${text}</h2>`;
+            if (tag === 'h3') return `<h3 class="doc-h3">${text}</h3>`;
+            if (tag === 'table') return `
+                <div class="table-wrapper">
+                    <table>${block.innerHTML}</table>
+                </div>
+            `;
+            return `<p class="doc-p">${text}</p>`;
+        }).join('');
 
-            function renderElement(el) {
-                if (!el.textRun) return '';
-                let text = el.textRun.content || '';
-                text = text.replace(/\n$/, '');
-                const style = el.textRun.textStyle || {};
+        document.getElementById('articleBody').innerHTML = `
+            <div class="doc-content">${bodyHtml}</div>
+        `;
 
-                if (style.bold) text = `<strong>${text}</strong>`;
-                if (style.italic) text = `<em>${text}</em>`;
-                if (style.underline) text = `<u>${text}</u>`;
-                if (style.link?.url) text = `<a href="${style.link.url}" target="_blank">${text}</a>`;
-
-                return text;
-            }
-
-            function renderDocTable(table) {
-                const rows = (table.tableRows || []).map(row => {
-                    const cells = (row.tableCells || []).map(cell => {
-                        const content = (cell.content || []).map(block =>
-                            block.paragraph ? renderParagraph(block.paragraph) : ''
-                        ).join('');
-                        return `<td>${content}</td>`;
-                    }).join('');
-                    return `<tr>${cells}</tr>`;
-                });
-
-                return `
-                    <div class="table-wrapper" style="margin: var(--space-lg) 0;">
-                        <table>${rows.join('')}</table>
-                    </div>
-                `;
-            }
+    } catch (err) {
+        console.error('Doc fetch error:', err);
+        document.getElementById('articleBody').innerHTML =
+            '<p style="color:var(--text-muted)">Error loading article.</p>';
+    }
+}
 
             // ── Comments ──
             function initComments() {
