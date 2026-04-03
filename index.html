@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JG&FF | Home</title>
+    <meta name="description" content="JG&FF Fantasy Football League — Official Site">
+    <link rel="icon" href="/assets/favicon.ico" type="image/x-icon">
+    <link rel="stylesheet" href="/css/global.css">
+    <link rel="stylesheet" href="/css/nav.css">
+    <link rel="stylesheet" href="/css/home.css">
+</head>
+<body>
+    <div class="page-wrapper">
+
+        <!-- ── HERO BANNER ── -->
+        <section class="hero">
+            <div class="hero-content">
+                <p class="hero-eyebrow">Official League Site</p>
+                <h1 class="hero-title">JG<span class="hero-amp">&</span>FF</h1>
+                <p class="hero-subtitle">The Hall of Fame Experience</p>
+                <div class="gold-divider" style="margin: 0 auto;"></div>
+            </div>
+        </section>
+
+        <!-- ── NEWS SECTION ── -->
+        <section class="section">
+            <div class="container">
+                <h2 class="section-title">Latest News</h2>
+                <div id="featuredArticle">
+                    <div class="skeleton skeleton-card"></div>
+                </div>
+                <div id="previousArticles" class="articles-grid">
+                    <div class="skeleton skeleton-card"></div>
+                    <div class="skeleton skeleton-card"></div>
+                    <div class="skeleton skeleton-card"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ── SCOREBOARD SECTION ── -->
+        <section class="section section-dark">
+            <div class="container">
+                <h2 class="section-title">
+                    Week <span id="currentWeek">--</span> Scoreboard
+                    <span class="live-badge" id="liveBadge" style="display:none;">LIVE</span>
+                </h2>
+                <div id="scoreboard" class="scoreboard-grid">
+                    <div class="skeleton skeleton-card"></div>
+                    <div class="skeleton skeleton-card"></div>
+                    <div class="skeleton skeleton-card"></div>
+                </div>
+                <div class="top-scorer-bar" id="topScorerBar" style="display:none;">
+                    <span class="top-scorer-label">🏆 Top Scorer</span>
+                    <span id="topScorerName" class="top-scorer-name"></span>
+                    <span id="topScorerPoints" class="top-scorer-points"></span>
+                </div>
+            </div>
+        </section>
+
+        <!-- ── STANDINGS SECTION ── -->
+        <section class="section">
+            <div class="container">
+                <h2 class="section-title">Season Standings</h2>
+                <div class="table-wrapper">
+                    <table id="standingsTable">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Team</th>
+                                <th>W</th>
+                                <th>L</th>
+                                <th>PF</th>
+                                <th>PA</th>
+                            </tr>
+                        </thead>
+                        <tbody id="standingsBody">
+                            <tr>
+                                <td colspan="6">
+                                    <div class="skeleton skeleton-text"></div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- ── LEAGUE CHAT ── -->
+        <section class="section section-dark">
+            <div class="container">
+                <h2 class="section-title">League Chat</h2>
+                <div class="chat-wrapper">
+                    <div class="comment-form card">
+                        <input 
+                            type="text" 
+                            id="chatName" 
+                            class="input-field" 
+                            placeholder="Your name"
+                            maxlength="50"
+                        >
+                        <textarea 
+                            id="chatText" 
+                            class="input-field textarea-field" 
+                            placeholder="Say something... (250 characters max)"
+                            maxlength="250"
+                        ></textarea>
+                        <div class="form-footer">
+                            <span id="charCount" class="char-count">250</span>
+                            <button id="chatSubmit" class="btn btn-primary">Post</button>
+                        </div>
+                    </div>
+                    <div id="chatFeed" class="chat-feed">
+                        <div class="skeleton skeleton-card"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </div>
+
+    <!-- Scripts -->
+    <script src="/js/config.js"></script>
+    <script src="/js/nav.js"></script>
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js';
+        import { getDatabase, ref, push, onValue, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-database.js';
+
+        (async () => {
+            // Wait for full page load to ensure config.js is ready
+            await new Promise(resolve => {
+                if (document.readyState === 'complete') resolve();
+                else window.addEventListener('load', resolve);
+            });
+
+            const { FIREBASE, SLEEPER_LEAGUE_ID, GOOGLE_API_KEY, DRIVE_FOLDERS } = window.CONFIG;
+
+            // ── Firebase ──
+            const app = initializeApp(FIREBASE);
+            const db = getDatabase(app);
+
+            // ── Sleeper API ──
+            async function fetchSleeperData() {
+                try {
+                    const [leagueRes, rostersRes, usersRes] = await Promise.all([
+                        fetch(`https://api.sleeper.app/v1/league/${SLEEPER_LEAGUE_ID}`),
+                        fetch(`https://api.sleeper.app/v1/league/${SLEEPER_LEAGUE_ID}/rosters`),
+                        fetch(`https://api.sleeper.app/v1/league/${SLEEPER_LEAGUE_ID}/users`)
+                    ]);
+
+                    const league = await leagueRes.json();
+                    const rosters = await rostersRes.json();
+                    const users = await usersRes.json();
+
+                    const currentWeek = league.settings.leg || 1;
+                    document.getElementById('currentWeek').textContent = currentWeek;
+
+                    const userMap = {};
+                    users.forEach(u => userMap[u.user_id] = u);
+
+                    renderStandings(rosters, userMap);
+
+                    const matchupsRes = await fetch(
+                        `https://api.sleeper.app/v1/league/${SLEEPER_LEAGUE_ID}/matchups/${currentWeek}`
+                    );
+                    const matchups = await matchupsRes.json();
+                    renderScoreboard(matchups, rosters, userMap);
+
+                    // Poll for live updates every 60 seconds
+                    setInterval(async () => {
+                        const liveRes = await fetch(
+                            `https://api.sleeper.app/v1/league/${SLEEPER_LEAGUE_ID}/matchups/${currentWeek}`
+                        );
+                        const liveMatchups = await liveRes.json();
+                        renderScoreboard(liveMatchups, rosters, userMap);
+                    }, 60000);
+
+                } catch (err) {
+                    console.error('Sleeper API error:', err);
+                }
+            }
+
+            function renderStandings(rosters, userMap) {
+                const sorted = [...rosters].sort((a, b) => {
+                    const wDiff = (b.settings.wins || 0) - (a.settings.wins || 0);
+                    if (wDiff !== 0) return wDiff;
+                    return (b.settings.fpts || 0) - (a.settings.fpts || 0);
+                });
+
+                const tbody = document.getElementById('standingsBody');
+                tbody.innerHTML = sorted.map((roster, i) => {
+                    const user = userMap[roster.owner_id] || {};
+                    const teamName = user.metadata?.team_name || user.display_name || 'Unknown';
+                    const wins = roster.settings.wins || 0;
+                    const losses = roster.settings.losses || 0;
+                    const pf = ((roster.settings.fpts || 0) + (roster.settings.fpts_decimal || 0) / 100).toFixed(2);
+                    const pa = ((roster.settings.fpts_against || 0) + (roster.settings.fpts_against_decimal || 0) / 100).toFixed(2);
+
+                    return `
+                        <tr class="${i === 0 ? 'standing-first' : ''}">
+                            <td class="standing-rank">${i + 1}</td>
+                            <td class="standing-team">${teamName}</td>
+                            <td>${wins}</td>
+                            <td>${losses}</td>
+                            <td class="standing-pf">${pf}</td>
+                            <td>${pa}</td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+
+            function renderScoreboard(matchups, rosters, userMap) {
+                const groups = {};
+                matchups.forEach(m => {
+                    if (!groups[m.matchup_id]) groups[m.matchup_id] = [];
+                    groups[m.matchup_id].push(m);
+                });
+
+                let topScorer = null;
+                let topPoints = 0;
+                matchups.forEach(m => {
+                    if ((m.points || 0) > topPoints) {
+                        topPoints = m.points;
+                        const roster = rosters.find(r => r.roster_id === m.roster_id);
+                        const user = roster ? userMap[roster.owner_id] : null;
+                        topScorer = user?.metadata?.team_name || user?.display_name || 'Unknown';
+                    }
+                });
+
+                if (topScorer) {
+                    document.getElementById('topScorerBar').style.display = 'flex';
+                    document.getElementById('topScorerName').textContent = topScorer;
+                    document.getElementById('topScorerPoints').textContent = `${topPoints.toFixed(2)} pts`;
+                }
+
+                document.getElementById('liveBadge').style.display = 'inline-flex';
+
+                const grid = document.getElementById('scoreboard');
+                grid.innerHTML = Object.values(groups).map(pair => {
+                    if (pair.length < 2) return '';
+
+                    const [t1, t2] = pair;
+                    const r1 = rosters.find(r => r.roster_id === t1.roster_id);
+                    const r2 = rosters.find(r => r.roster_id === t2.roster_id);
+                    const u1 = r1 ? userMap[r1.owner_id] : null;
+                    const u2 = r2 ? userMap[r2.owner_id] : null;
+                    const name1 = u1?.metadata?.team_name || u1?.display_name || 'Team 1';
+                    const name2 = u2?.metadata?.team_name || u2?.display_name || 'Team 2';
+                    const pts1 = (t1.points || 0).toFixed(2);
+                    const pts2 = (t2.points || 0).toFixed(2);
+                    const winning1 = parseFloat(pts1) >= parseFloat(pts2);
+
+                    return `
+                        <div class="matchup-card card">
+                            <div class="matchup-team ${winning1 ? 'winning' : ''}">
+                                <span class="matchup-name">${name1}</span>
+                                <span class="matchup-score">${pts1}</span>
+                            </div>
+                            <div class="matchup-divider">VS</div>
+                            <div class="matchup-team ${!winning1 ? 'winning' : ''}">
+                                <span class="matchup-name">${name2}</span>
+                                <span class="matchup-score">${pts2}</span>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            // ── Google Drive News ──
+            async function fetchNews() {
+                try {
+                    const url = `https://www.googleapis.com/drive/v3/files?q='${DRIVE_FOLDERS.NEWS}'+in+parents+and+mimeType='application/pdf'&orderBy=createdTime+desc&fields=files(id,name,createdTime,thumbnailLink)&key=${GOOGLE_API_KEY}`;
+                    const res = await fetch(url);
+                    const data = await res.json();
+                    const files = (data.files || []).filter(f => !f.name.includes('JGFF Week'));
+
+                    if (files.length === 0) {
+                        document.getElementById('featuredArticle').innerHTML = '<p style="color: var(--text-muted);">No articles yet.</p>';
+                        document.getElementById('previousArticles').innerHTML = '';
+                        return;
+                    }
+
+                    const featured = files[0];
+                    document.getElementById('featuredArticle').innerHTML = `
+                        <a href="https://drive.google.com/file/d/${featured.id}/view" 
+                           target="_blank" class="featured-card card">
+                            <div class="featured-meta">
+                                <span class="article-tag">Latest</span>
+                                <span class="article-date">${formatDate(featured.createdTime)}</span>
+                            </div>
+                            <h2 class="featured-title">${cleanName(featured.name)}</h2>
+                            <span class="btn btn-primary" style="margin-top: auto;">Read Article →</span>
+                        </a>
+                    `;
+
+                    const previous = files.slice(1);
+                    document.getElementById('previousArticles').innerHTML = previous.length > 0
+                        ? previous.map(f => `
+                            <a href="https://drive.google.com/file/d/${f.id}/view"
+                               target="_blank" class="article-card card">
+                                <div class="article-meta">
+                                    <span class="article-date">${formatDate(f.createdTime)}</span>
+                                </div>
+                                <h4 class="article-title">${cleanName(f.name)}</h4>
+                                <span class="article-link">Read →</span>
+                            </a>
+                        `).join('')
+                        : '<p style="color: var(--text-muted);">No previous articles.</p>';
+
+                } catch (err) {
+                    console.error('Drive API error:', err);
+                }
+            }
+
+            // ── League Chat ──
+            function initChat() {
+                const chatRef = ref(db, 'league-chat');
+                const nameInput = document.getElementById('chatName');
+                const textInput = document.getElementById('chatText');
+                const submitBtn = document.getElementById('chatSubmit');
+                const charCount = document.getElementById('charCount');
+                const feed = document.getElementById('chatFeed');
+
+                textInput.addEventListener('input', () => {
+                    const remaining = 250 - textInput.value.length;
+                    charCount.textContent = remaining;
+                    charCount.style.color = remaining < 20 ? 'var(--error)' : 'var(--text-muted)';
+                });
+
+                submitBtn.addEventListener('click', async () => {
+                    const name = nameInput.value.trim();
+                    const text = textInput.value.trim();
+                    if (!name || !text) return;
+
+                    submitBtn.disabled = true;
+                    await push(chatRef, {
+                        name,
+                        text,
+                        parentId: null,
+                        timestamp: serverTimestamp()
+                    });
+                    textInput.value = '';
+                    charCount.textContent = '250';
+                    submitBtn.disabled = false;
+                });
+
+                onValue(chatRef, (snapshot) => {
+                    const data = snapshot.val();
+                    if (!data) {
+                        feed.innerHTML = '<p class="no-comments">No comments yet. Be the first!</p>';
+                        return;
+                    }
+
+                    const comments = Object.entries(data).map(([id, val]) => ({ id, ...val }));
+                    comments.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+                    const topLevel = comments.filter(c => !c.parentId);
+                    const replies = comments.filter(c => c.parentId);
+
+                    feed.innerHTML = topLevel.map(comment => `
+                        <div class="comment-thread">
+                            ${renderComment(comment)}
+                            <div class="replies">
+                                ${replies
+                                    .filter(r => r.parentId === comment.id)
+                                    .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0))
+                                    .map(r => renderComment(r, true))
+                                    .join('')}
+                            </div>
+                            <button class="reply-toggle btn btn-secondary" 
+                                    onclick="toggleReplyForm('${comment.id}')">
+                                Reply
+                            </button>
+                            <div class="reply-form" id="replyForm-${comment.id}" style="display:none;">
+                                <input type="text" class="input-field" placeholder="Your name"
+                                       id="replyName-${comment.id}" maxlength="50">
+                                <textarea class="input-field textarea-field" 
+                                          placeholder="Your reply... (250 characters max)"
+                                          id="replyText-${comment.id}" maxlength="250"></textarea>
+                                <button class="btn btn-primary" 
+                                        onclick="submitReply('${comment.id}')">
+                                    Post Reply
+                                </button>
+                            </div>
+                        </div>
+                    `).join('');
+                });
+            }
+
+            function renderComment(comment, isReply = false) {
+                const time = comment.timestamp
+                    ? new Date(comment.timestamp).toLocaleDateString('en-US', {
+                        month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                      })
+                    : 'Just now';
+                return `
+                    <div class="comment ${isReply ? 'comment-reply' : ''}">
+                        <div class="comment-header">
+                            <span class="comment-name">${escapeHtml(comment.name)}</span>
+                            <span class="comment-time">${time}</span>
+                        </div>
+                        <p class="comment-text">${escapeHtml(comment.text)}</p>
+                    </div>
+                `;
+            }
+
+            window.toggleReplyForm = (id) => {
+                const form = document.getElementById(`replyForm-${id}`);
+                form.style.display = form.style.display === 'none' ? 'block' : 'none';
+            };
+
+            window.submitReply = async (parentId) => {
+                const name = document.getElementById(`replyName-${parentId}`).value.trim();
+                const text = document.getElementById(`replyText-${parentId}`).value.trim();
+                if (!name || !text) return;
+
+                const chatRef = ref(db, 'league-chat');
+                await push(chatRef, {
+                    name,
+                    text,
+                    parentId,
+                    timestamp: serverTimestamp()
+                });
+
+                document.getElementById(`replyForm-${parentId}`).style.display = 'none';
+            };
+
+            // ── Utilities ──
+            function formatDate(dateStr) {
+                return new Date(dateStr).toLocaleDateString('en-US', {
+                    year: 'numeric', month: 'long', day: 'numeric'
+                });
+            }
+
+            function cleanName(filename) {
+                return filename.replace(/\.pdf$/i, '').replace(/[_-]/g, ' ');
+            }
+
+            function escapeHtml(str) {
+                const div = document.createElement('div');
+                div.appendChild(document.createTextNode(str));
+                return div.innerHTML;
+            }
+
+            // ── Init ──
+            fetchSleeperData();
+            fetchNews();
+            initChat();
+
+        })();
+    </script>
+</body>
+</html>
