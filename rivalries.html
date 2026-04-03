@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JG&FF | Rivalries</title>
+    <meta name="description" content="JG&FF Fantasy Football League — Rivalries">
+    <link rel="icon" href="/assets/favicon.ico" type="image/x-icon">
+    <link rel="stylesheet" href="/css/global.css">
+    <link rel="stylesheet" href="/css/nav.css">
+    <link rel="stylesheet" href="/css/rivalries.css">
+</head>
+<body>
+    <div class="page-wrapper">
+
+        <!-- ── MAIN RIVALRIES VIEW ── -->
+        <div id="rivalriesView">
+            <section class="page-header">
+                <div class="container">
+                    <h1 class="page-title">Rivalries</h1>
+                    <div class="gold-divider"></div>
+                </div>
+            </section>
+
+            <section class="section">
+                <div class="container">
+                    <div id="rivalriesGrid" class="rivalries-grid">
+                        <div class="skeleton skeleton-card"></div>
+                        <div class="skeleton skeleton-card"></div>
+                        <div class="skeleton skeleton-card"></div>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- ── INDIVIDUAL RIVALRY VIEW ── -->
+        <div id="rivalryView" style="display:none;">
+            <section class="page-header">
+                <div class="container">
+                    <button class="btn btn-back" id="backBtn">← Back to Rivalries</button>
+                    <div id="rivalryHeader" class="rivalry-header">
+                        <div class="skeleton skeleton-card" style="height:160px;"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="section">
+                <div class="container" id="rivalryContent">
+                    <div class="skeleton skeleton-card"></div>
+                </div>
+            </section>
+        </div>
+
+    </div>
+
+    <!-- Scripts -->
+    <script src="/js/config.js"></script>
+    <script src="/js/nav.js"></script>
+    <script type="module">
+        (async () => {
+            await new Promise(resolve => {
+                if (document.readyState === 'complete') resolve();
+                else window.addEventListener('load', resolve);
+            });
+
+            const { GOOGLE_API_KEY, GOOGLE_SHEETS_ID, SLEEPER_LEAGUE_ID } = window.CONFIG;
+
+            // ── Hardcoded rivalry tabs ──
+            const RIVALRY_TABS = [
+                'Anand v. Domingo',
+                'Cookies & Cream Classic',
+                'Eagle Tavern Tussle',
+                'Edgewood Escapade',
+                'Good Guys\' Game',
+                'Little Rocky Rumble',
+                'Mike & Dave Classic',
+                'Salute To Service Bowl',
+                'The Civil War',
+                'The King\'s Cup',
+                'WCI Derby',
+                'TBD'
+            ];
+
+            // ── Fetch full tab ──
+            async function fetchTab(tab) {
+                const encoded = encodeURIComponent(tab);
+                const url = `https://sheets.googleapis.com/v4/spreadsheets/${GOOGLE_SHEETS_ID}/values/${encoded}?key=${GOOGLE_API_KEY}`;
+                const res = await fetch(url);
+                const data = await res.json();
+                return data.values || [];
+            }
+
+            // ── Fetch Sleeper schedule for next matchup week ──
+            async function fetchNextMatchupWeek(team1, team2) {
+                try {
+                    const [leagueRes, rostersRes, usersRes] = await Promise.all([
+                        fetch(`https://api.sleeper.app/v1/league/${SLEEPER_LEAGUE_ID}`),
+                        fetch(`https://api.sleeper.app/v1/league/${SLEEPER_LEAGUE_ID}/rosters`),
+                        fetch(`https://api.sleeper.app/v1/league/${SLEEPER_LEAGUE_ID}/users`)
+                    ]);
+
+                    const league = await leagueRes.json();
+                    const rosters = await rostersRes.json();
+                    const users = await usersRes.json();
+
+                    const currentWeek = league.settings.leg || 1;
+                    const totalWeeks = league.settings.playoff_week_start - 1 || 14;
+
+                    const userMap = {};
+                    users.forEach(u => userMap[u.user_id] = u);
+
+                    // Find roster IDs for the two teams
+                    const findRosterId = (teamName) => {
+                        const roster = rosters.find(r => {
+                            const user = userMap[r.owner_id];
+                            const name = user?.metadata?.team_name || user?.display_name || '';
+                            return name.toLowerCase().includes(teamName.toLowerCase()) ||
+                                   teamName.toLowerCase().includes(name.toLowerCase());
+                        });
+                        return roster?.roster_id;
+                    };
+
+                    const r1 = findRosterId(team1);
+                    const r2 = findRosterId(team2);
+
+                    if (!r1 || !r2) return null;
+
+                    // Search future weeks for matchup
+                    for (let week = currentWeek; week <= totalWeeks; week++) {
+                        const matchupsRes = await fetch(
+                            `https://api.sleeper.app/v1/league/${SLEEPER_LEAGUE_ID}/matchups/${week}`
+                        );
+                        const matchups = await matchupsRes.json();
+
+                        const groups = {};
+                        matchups.forEach(m => {
+                            if (!groups[m.matchup_id]) groups[m.matchup_id] = [];
+                            groups[m.matchup_id].push(m);
+                        });
+
+                        for (const pair of Object.values(groups)) {
+                            const ids = pair.map(m => m.roster_id);
+                            if (ids.includes(r1) && ids.includes(r2)) {
+                                return week;
+                            }
+                        }
+                    }
+
+                    return null;
+                } catch (err) {
+                    console.error('Sleeper schedule error:', err);
+                    return null;
+                }
+            }
+
+            // ── Load Rivalries Grid ──
+            async function loadRivalriesGrid() {
+                const grid = document.getElementById('rivalriesGrid');
+
+                const cards = await Promise.all(RIVALRY_TABS.map(async (tab) => {
+                    const rows = await fetchTab(tab);
+
+                    const team1 = rows[2]?.[0] || '?';
+                    const team2 = rows[2]?.[2] || '?';
+
+                    const logoPath = `/assets/rivalry-logos/${tab.replace(/[^a-zA-Z0-9]/g, '_')}.png`;
+
+                    const nextWeek = await fetchNextMatchupWeek(team1, team2);
+
+                    return `
+                        <div class="rivalry-card card" onclick="openRivalry('${tab.replace(/'/g, "\\'")}')">
+                            <img src="${logoPath}"
+                                 alt="${tab} logo"
+                                 class="rivalry-card-logo"
+                                 onerror="this.style.display='none'">
+                            <h3 class="rivalry-card-title">${tab}</h3>
+                            <div class="rivalry-card-teams">
+                                <span class="rivalry-card-team">${team1}</span>
+                                <span class="rivalry-vs">vs</span>
+                                <span class="rivalry-card-team">${team2}</span>
+                            </div>
+                            ${nextWeek ? `
+                                <div class="rivalry-card-week">
+                                    <span class="week-badge">Week ${nextWeek}</span>
+                                </div>
+                            ` : ''}
+                        </div>
+                    `;
+                }));
+
+                grid.innerHTML = cards.join('');
+            }
+
+            // ── Load Individual Rivalry ──
+            async function loadRivalryPage(tab) {
+                document.getElementById('rivalriesView').style.display = 'none';
+                document.getElementById('rivalryView').style.display = 'block';
+                window.scrollTo(0, 0);
+
+                document.getElementById('rivalryHeader').innerHTML = '<div class="skeleton skeleton-card" style="height:160px;"></div>';
+                document.getElementById('rivalryContent').innerHTML = '<div class="skeleton skeleton-card"></div>';
+
+                const rows = await fetchTab(tab);
+
+                const team1 = rows[2]?.[0] || '?';
+                const team2 = rows[2]?.[2] || '?';
+                const coach1 = rows[3]?.[0] || '?';
+                const coach2 = rows[3]?.[2] || '?';
+                const wins1 = rows[4]?.[0] || '0';
+                const wins2 = rows[4]?.[2] || '0';
+                const currentWinner = rows[5]?.[1] || '—';
+
+                const logoPath = `/assets/rivalry-logos/${tab.replace(/[^a-zA-Z0-9]/g, '_')}.png`;
+                const team1Logo = `/assets/logos/${team1.replace(/\s+/g, '_')}.png`;
+                const team2Logo = `/assets/logos/${team2.replace(/\s+/g, '_')}.png`;
+
+                // Header
+                document.getElementById('rivalryHeader').innerHTML = `
+                    <div class="rivalry-hero">
+                        <img src="${logoPath}"
+                             alt="${tab} logo"
+                             class="rivalry-hero-logo"
+                             onerror="this.style.display='none'">
+                        <h1 class="rivalry-hero-title">${tab}</h1>
+                    </div>
+                `;
+
+                // Find matchup history table (after first blank row)
+                let historyRows = [];
+                let foundBlank = false;
+                for (let i = 6; i < rows.length; i++) {
+                    const row = rows[i];
+                    const isBlank = !row || row.every(c => !c || !c.trim());
+                    if (isBlank) {
+                        foundBlank = true;
+                        continue;
+                    }
+                    if (foundBlank) {
+                        historyRows.push(row);
+                    }
+                }
+
+                // Content
+                document.getElementById('rivalryContent').innerHTML = `
+                    <!-- Head to Head -->
+                    <div class="h2h-block">
+                        <div class="h2h-team">
+                            <img src="${team1Logo}"
+                                 alt="${team1}"
+                                 class="h2h-logo"
+                                 onerror="this.style.display='none'">
+                            <h2 class="h2h-team-name">${team1}</h2>
+                            <p class="h2h-coach">${coach1}</p>
+                            <span class="h2h-wins">${wins1} <span class="h2h-wins-label">wins</span></span>
+                        </div>
+
+                        <div class="h2h-center">
+    <span class="h2h-vs">VS</span>
+    <img src="${logoPath}"
+         alt="${tab} logo"
+         class="h2h-rivalry-logo"
+         onerror="this.style.display='none'">
+</div>
+
+                        <div class="h2h-team h2h-team-right">
+                            <img src="${team2Logo}"
+                                 alt="${team2}"
+                                 class="h2h-logo"
+                                 onerror="this.style.display='none'">
+                            <h2 class="h2h-team-name">${team2}</h2>
+                            <p class="h2h-coach">${coach2}</p>
+                            <span class="h2h-wins">${wins2} <span class="h2h-wins-label">wins</span></span>
+                        </div>
+                    </div>
+
+                    <!-- Matchup History -->
+                    ${historyRows.length > 0 ? `
+                        <div class="rivalry-history">
+                            <h2 class="section-title">Matchup History</h2>
+                            <div class="table-wrapper">
+                                <table>
+                                    <thead>
+                                        <tr>
+    ${Array.from(
+        {length: Math.max(...historyRows.map(r => r.length))},
+        (_, i) => `<th>${historyRows[0][i] || ''}</th>`
+    ).join('')}
+</tr>
+                                    </thead>
+                                    <tbody>
+    ${historyRows.slice(1).map(row => {
+        const maxCols = Math.max(...historyRows.map(r => r.length));
+        return `
+            <tr>
+                ${Array.from({length: maxCols}, (_, i) =>
+                    `<td>${row[i] || ''}</td>`
+                ).join('')}
+            </tr>
+        `;
+    }).join('')}
+</tbody>
+                                </table>
+                            </div>
+                        </div>
+                    ` : ''}
+                `;
+            }
+
+            // ── Global handlers ──
+            window.openRivalry = (tab) => loadRivalryPage(tab);
+
+            document.getElementById('backBtn').addEventListener('click', () => {
+                document.getElementById('rivalryView').style.display = 'none';
+                document.getElementById('rivalriesView').style.display = 'block';
+                window.scrollTo(0, 0);
+            });
+
+            // ── Init ──
+            loadRivalriesGrid();
+
+        })();
+    </script>
+</body>
+</html>

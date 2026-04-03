@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JG&FF | League History</title>
+    <meta name="description" content="JG&FF Fantasy Football League — League History">
+    <link rel="icon" href="/assets/favicon.ico" type="image/x-icon">
+    <link rel="stylesheet" href="/css/global.css">
+    <link rel="stylesheet" href="/css/nav.css">
+    <link rel="stylesheet" href="/css/league-history.css">
+</head>
+<body>
+    <div class="page-wrapper">
+
+        <!-- ── HEADER ── -->
+        <section class="page-header">
+            <div class="container">
+                <h1 class="page-title">League History</h1>
+                <div class="gold-divider"></div>
+            </div>
+        </section>
+
+        <!-- ── HOME TABLE ── -->
+        <section class="section">
+            <div class="container">
+                <div id="homeTable" class="table-wrapper">
+                    <div class="skeleton skeleton-card"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ── HISTORY DROPDOWNS ── -->
+        <section class="section">
+            <div class="container">
+                <h2 class="section-title">Season History</h2>
+                <div id="historyAccordion" class="accordion">
+                    <div class="skeleton skeleton-card"></div>
+                    <div class="skeleton skeleton-card"></div>
+                    <div class="skeleton skeleton-card"></div>
+                </div>
+            </div>
+        </section>
+
+    </div>
+
+    <!-- Scripts -->
+    <script src="/js/config.js"></script>
+    <script src="/js/nav.js"></script>
+    <script type="module">
+        (async () => {
+            await new Promise(resolve => {
+                if (document.readyState === 'complete') resolve();
+                else window.addEventListener('load', resolve);
+            });
+
+            const { GOOGLE_API_KEY, GOOGLE_SHEETS_ID } = window.CONFIG;
+
+            // ── Fetch a full tab ──
+            async function fetchTab(tab) {
+                const encoded = encodeURIComponent(tab);
+                const url = `https://sheets.googleapis.com/v4/spreadsheets/${GOOGLE_SHEETS_ID}/values/${encoded}?key=${GOOGLE_API_KEY}`;
+                const res = await fetch(url);
+                const data = await res.json();
+                return data.values || [];
+            }
+
+            // ── Parse tables from rows ──
+            // Returns array of { title, rows }
+            function parseTables(rows) {
+                const tables = [];
+                let currentTable = null;
+
+                for (let i = 0; i < rows.length; i++) {
+                    const row = rows[i];
+                    const isBlank = !row || row.every(c => !c || !c.trim());
+
+                    if (isBlank) {
+                        if (currentTable) {
+                            tables.push(currentTable);
+                            currentTable = null;
+                        }
+                        continue;
+                    }
+
+                    if (!currentTable) {
+                        // First non-blank cell after blank = title
+                        currentTable = {
+                            title: row[0] || 'Untitled',
+                            rows: []
+                        };
+                    } else {
+                        currentTable.rows.push(row);
+                    }
+                }
+
+                // Push last table if no trailing blank
+                if (currentTable) tables.push(currentTable);
+
+                return tables;
+            }
+
+            // ── Render Table ──
+            function renderTable(rows) {
+                if (!rows.length) return '';
+                const [header, ...body] = rows;
+                const maxCols = Math.max(...rows.map(r => r.length));
+                return `
+                    <table>
+                        <thead>
+                            <tr>
+                                ${Array.from({length: maxCols}, (_, i) =>
+                                    `<th>${header[i] || ''}</th>`
+                                ).join('')}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${body.map(row => `
+                                <tr>
+                                    ${Array.from({length: maxCols}, (_, i) =>
+                                        `<td>${row[i] || ''}</td>`
+                                    ).join('')}
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                `;
+            }
+
+            // ── Load HOME tab ──
+            async function loadHomeTable() {
+                const rows = await fetchTab('HOME');
+                const tables = parseTables(rows);
+
+                if (!tables.length) {
+                    document.getElementById('homeTable').innerHTML = '<p style="color:var(--text-muted)">No data found.</p>';
+                    return;
+                }
+
+                const table = tables[0];
+                document.getElementById('homeTable').innerHTML = `
+                    <h2 class="section-title">${table.title}</h2>
+                    <div class="table-wrapper">
+                        ${renderTable(table.rows)}
+                    </div>
+                `;
+            }
+
+
+            // ── Load History Accordion ──
+            async function loadHistory() {
+                const rows = await fetchTab('History');
+                const tables = parseTables(rows);
+
+                if (!tables.length) {
+                    document.getElementById('historyAccordion').innerHTML = '<p style="color:var(--text-muted)">No history found.</p>';
+                    return;
+                }
+
+                document.getElementById('historyAccordion').innerHTML = tables.map((table, i) => `
+                    <div class="accordion-item">
+                        <button class="accordion-btn ${i === 0 ? 'open' : ''}"
+                                onclick="toggleAccordion(this)">
+                            <span>${table.title}</span>
+                            <span class="accordion-icon">${i === 0 ? '−' : '+'}</span>
+                        </button>
+                        <div class="accordion-content ${i === 0 ? 'open' : ''}">
+                            <div class="table-wrapper">
+                                ${renderTable(table.rows)}
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            }
+
+            // ── Accordion Toggle ──
+            window.toggleAccordion = (btn) => {
+                const content = btn.nextElementSibling;
+                const icon = btn.querySelector('.accordion-icon');
+                const isOpen = content.classList.contains('open');
+
+                content.classList.toggle('open', !isOpen);
+                btn.classList.toggle('open', !isOpen);
+                icon.textContent = isOpen ? '+' : '−';
+            };
+
+            // ── Init ──
+            loadHomeTable();
+            loadHistory();
+
+        })();
+    </script>
+</body>
+</html>

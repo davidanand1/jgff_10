@@ -1,0 +1,133 @@
+/* ================================================
+   JG&FF LEAGUE HISTORY PAGE
+================================================ */
+
+/* ── Trophy Case ── */
+.trophy-case-header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    margin-bottom: var(--space-xl);
+}
+
+.trophy-case-title {
+    font-family: var(--font-serif);
+    font-size: clamp(1.8rem, 4vw, 2.5rem);
+    color: var(--text-primary);
+    margin-bottom: var(--space-md);
+}
+
+.trophy-case-underline {
+    width: clamp(60px, 20vw, 200px);
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--gold), transparent);
+    border-radius: 2px;
+}
+
+.trophy-case-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-xl);
+    justify-content: center;
+}
+
+.trophy-case-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-sm);
+    text-align: center;
+}
+
+.trophy-case-img {
+    width: 80px;
+    height: 80px;
+    object-fit: contain;
+    filter: drop-shadow(0 4px 12px rgba(201, 168, 76, 0.4));
+    transition: transform var(--transition);
+}
+
+.trophy-case-item:hover .trophy-case-img {
+    transform: translateY(-4px);
+}
+
+.trophy-case-year {
+    font-family: var(--font-serif);
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--gold);
+}
+
+.trophy-case-name {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    max-width: 100px;
+    text-align: center;
+    line-height: 1.3;
+}
+
+/* ── Accordion ── */
+.accordion {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+}
+
+.accordion-item {
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+}
+
+.accordion-btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-lg) var(--space-xl);
+    background: var(--bg-surface);
+    border: none;
+    color: var(--text-primary);
+    font-family: var(--font-serif);
+    font-size: 1.1rem;
+    cursor: pointer;
+    text-align: left;
+    transition: background var(--transition), color var(--transition);
+}
+
+.accordion-btn:hover {
+    background: var(--bg-surface-2);
+    color: var(--gold);
+}
+
+.accordion-btn.open {
+    color: var(--gold);
+    background: var(--bg-surface-2);
+    border-bottom: 1px solid var(--border);
+}
+
+.accordion-icon {
+    font-size: 1.4rem;
+    color: var(--gold);
+    flex-shrink: 0;
+    line-height: 1;
+}
+
+.accordion-content {
+    display: none;
+    padding: var(--space-lg);
+    background: var(--bg-primary);
+}
+
+.accordion-content.open {
+    display: block;
+}
+
+/* ── Responsive ── */
+@media (max-width: 480px) {
+    .accordion-btn {
+        padding: var(--space-md) var(--space-lg);
+        font-size: 1rem;
+    }
+}

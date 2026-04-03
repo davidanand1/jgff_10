@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JG&FF | Rulebook</title>
+    <meta name="description" content="JG&FF Fantasy Football League — Rulebook">
+    <link rel="icon" href="/assets/favicon.ico" type="image/x-icon">
+    <link rel="stylesheet" href="/css/global.css">
+    <link rel="stylesheet" href="/css/nav.css">
+    <link rel="stylesheet" href="/css/rulebook.css">
+</head>
+<body>
+    <div class="page-wrapper">
+
+        <!-- ── HEADER ── -->
+        <section class="page-header">
+            <div class="container">
+                <h1 class="page-title">Rulebook</h1>
+                <div class="gold-divider"></div>
+            </div>
+        </section>
+
+        <!-- ── RULES LIST ── -->
+        <section class="section">
+            <div class="container">
+                <div id="rulebookList" class="rulebook-list">
+                    <div class="skeleton skeleton-text"></div>
+                    <div class="skeleton skeleton-text"></div>
+                    <div class="skeleton skeleton-text"></div>
+                    <div class="skeleton skeleton-text"></div>
+                    <div class="skeleton skeleton-text"></div>
+                </div>
+            </div>
+        </section>
+
+    </div>
+
+    <!-- Scripts -->
+    <script src="/js/config.js"></script>
+    <script src="/js/nav.js"></script>
+    <script type="module">
+        (async () => {
+            await new Promise(resolve => {
+                if (document.readyState === 'complete') resolve();
+                else window.addEventListener('load', resolve);
+            });
+
+            const { GOOGLE_API_KEY, DRIVE_FOLDERS } = window.CONFIG;
+
+            async function fetchRulebook() {
+                try {
+                    const url = `https://www.googleapis.com/drive/v3/files?q='${DRIVE_FOLDERS.RULEBOOK}'+in+parents+and+mimeType='application/pdf'&orderBy=modifiedTime+desc&fields=files(id,name,modifiedTime)&key=${GOOGLE_API_KEY}`;
+                    const res = await fetch(url);
+                    const data = await res.json();
+                    const files = data.files || [];
+
+                    if (files.length === 0) {
+                        document.getElementById('rulebookList').innerHTML =
+                            '<p style="color:var(--text-muted)">No rulebook files found.</p>';
+                        return;
+                    }
+
+                    document.getElementById('rulebookList').innerHTML = files.map(f => `
+                        <a href="https://drive.google.com/file/d/${f.id}/view"
+                           target="_blank"
+                           class="rulebook-item">
+                            <div class="rulebook-icon">📄</div>
+                            <div class="rulebook-info">
+                                <span class="rulebook-name">${cleanName(f.name)}</span>
+                                <span class="rulebook-date">Updated ${formatDate(f.modifiedTime)}</span>
+                            </div>
+                            <span class="rulebook-arrow">→</span>
+                        </a>
+                    `).join('');
+
+                } catch (err) {
+                    console.error('Rulebook fetch error:', err);
+                }
+            }
+
+            function cleanName(filename) {
+                return filename.replace(/\.pdf$/i, '').replace(/[_-]/g, ' ');
+            }
+
+            function formatDate(dateStr) {
+                return new Date(dateStr).toLocaleDateString('en-US', {
+                    year: 'numeric', month: 'long', day: 'numeric'
+                });
+            }
+
+            fetchRulebook();
+
+        })();
+    </script>
+</body>
+</html>

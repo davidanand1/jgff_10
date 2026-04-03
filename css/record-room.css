@@ -1,0 +1,20 @@
+/* ================================================
+   JG&FF RECORD ROOM PAGE
+================================================ */
+
+.records-container {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2xl);
+}
+
+.record-block {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+}
+
+.awards-year {
+    color: var(--gold);
+    font-style: italic;
+}
