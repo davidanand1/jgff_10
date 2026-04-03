@@ -18,7 +18,7 @@
             <div class="hero-content">
                 <p class="hero-eyebrow">Official League Site</p>
                 <h1 class="hero-title">JG<span class="hero-amp">&</span>FF</h1>
-                <p class="hero-subtitle">The Hall of Fame Experience</p>
+                <p class="hero-subtitle">The 10th Anniversary</p>
                 <div class="gold-divider" style="margin: 0 auto;"></div>
             </div>
         </section>
@@ -269,9 +269,10 @@
             // ── Google Drive News ──
             async function fetchNews() {
                 try {
-                    const url = `https://www.googleapis.com/drive/v3/files?q='${DRIVE_FOLDERS.NEWS}'+in+parents+and+mimeType='application/pdf'&orderBy=createdTime+desc&fields=files(id,name,createdTime,thumbnailLink)&key=${GOOGLE_API_KEY}`;
+                    const url = `https://www.googleapis.com/drive/v3/files?q='${DRIVE_FOLDERS.NEWS}'+in+parents+and+mimeType='application/vnd.google-apps.document'&orderBy=createdTime+desc&fields=files(id,name,createdTime)&key=${GOOGLE_API_KEY}`;
                     const res = await fetch(url);
                     const data = await res.json();
+                    console.log('News API response:', data);
                     const files = (data.files || []).filter(f => !f.name.includes('JGFF Week'));
 
                     if (files.length === 0) {
@@ -282,8 +283,7 @@
 
                     const featured = files[0];
                     document.getElementById('featuredArticle').innerHTML = `
-                        <a href="https://drive.google.com/file/d/${featured.id}/view" 
-                           target="_blank" class="featured-card card">
+                        <a href="/article.html?id=${featured.id}" class="featured-card card">
                             <div class="featured-meta">
                                 <span class="article-tag">Latest</span>
                                 <span class="article-date">${formatDate(featured.createdTime)}</span>
@@ -296,8 +296,7 @@
                     const previous = files.slice(1);
                     document.getElementById('previousArticles').innerHTML = previous.length > 0
                         ? previous.map(f => `
-                            <a href="https://drive.google.com/file/d/${f.id}/view"
-                               target="_blank" class="article-card card">
+                            <a href="/article.html?id=${f.id}" class="article-card card">
                                 <div class="article-meta">
                                     <span class="article-date">${formatDate(f.createdTime)}</span>
                                 </div>

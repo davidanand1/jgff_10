@@ -1,0 +1,62 @@
+/* ================================================
+   JG&FF ARTICLE PAGE
+================================================ */
+
+.article-layout {
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.article-title {
+    font-family: var(--font-serif);
+    font-size: clamp(1.8rem, 4vw, 2.8rem);
+    color: var(--text-primary);
+    line-height: 1.2;
+    margin-top: var(--space-md);
+}
+
+/* ── Doc Content ── */
+.article-body {
+    margin-bottom: var(--space-2xl);
+}
+
+.doc-h1 {
+    font-family: var(--font-serif);
+    font-size: clamp(1.5rem, 3vw, 2rem);
+    color: var(--text-primary);
+    margin: var(--space-xl) 0 var(--space-md);
+    padding-bottom: var(--space-sm);
+    border-bottom: 1px solid var(--border);
+}
+
+.doc-h2 {
+    font-family: var(--font-serif);
+    font-size: clamp(1.2rem, 2.5vw, 1.6rem);
+    color: var(--text-primary);
+    margin: var(--space-lg) 0 var(--space-sm);
+}
+
+.doc-h3 {
+    font-family: var(--font-serif);
+    font-size: 1.2rem;
+    color: var(--gold);
+    margin: var(--space-md) 0 var(--space-sm);
+}
+
+.doc-p {
+    color: var(--text-secondary);
+    line-height: 1.8;
+    margin-bottom: var(--space-md);
+    font-size: 1rem;
+}
+
+.doc-p a {
+    color: var(--gold);
+    text-decoration: underline;
+}
+
+/* ── Comments ── */
+.article-comments {
+    border-top: 1px solid var(--border);
+    padding-top: var(--space-2xl);
+}
