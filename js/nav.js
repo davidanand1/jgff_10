@@ -79,5 +79,50 @@ function isActive(currentPath, linkHref) {
     return currentPath.includes(linkHref.replace('.html', ''));
 }
 
-// Initialize on DOM ready
-document.addEventListener('DOMContentLoaded', initNav);
+
+// ── Scroll To Top ──
+function initScrollTop() {
+    const btn = document.createElement('button');
+    btn.className = 'scroll-top';
+    btn.innerHTML = '↑';
+    btn.setAttribute('aria-label', 'Scroll to top');
+    document.body.appendChild(btn);
+
+    window.addEventListener('scroll', () => {
+        btn.classList.toggle('visible', window.scrollY > 400);
+    });
+
+    btn.addEventListener('click', () => {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+}
+
+// ── Page Transition Links ──
+function initPageTransitions() {
+    document.addEventListener('click', (e) => {
+        const link = e.target.closest('a');
+        if (!link) return;
+        if (!link.href) return;
+        if (link.target === '_blank') return;
+        if (link.href.startsWith('mailto:')) return;
+        if (link.href.includes('#')) return;
+
+        // Only intercept same-origin links
+        if (!link.href.startsWith(window.location.origin)) return;
+
+        e.preventDefault();
+        document.body.style.opacity = '0';
+        document.body.style.transform = 'translateY(8px)';
+        document.body.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
+
+        setTimeout(() => {
+            window.location.href = link.href;
+        }, 200);
+    });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    initNav();
+    initScrollTop();
+    initPageTransitions();
+});

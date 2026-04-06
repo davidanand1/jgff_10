@@ -313,3 +313,53 @@ tbody td {
         padding: 0 var(--space-sm);
     }
 }
+
+/* ── Page Transitions ── */
+body {
+    animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Scroll To Top ── */
+.scroll-top {
+    position: fixed;
+    bottom: var(--space-xl);
+    right: var(--space-xl);
+    width: 44px;
+    height: 44px;
+    background: var(--gold);
+    color: #0D0D0D;
+    border: none;
+    border-radius: 50%;
+    font-size: 1.2rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: var(--shadow-md);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--transition), transform var(--transition);
+    z-index: 999;
+}
+
+.scroll-top.visible {
+    opacity: 1;
+    pointer-events: all;
+}
+
+.scroll-top:hover {
+    background: var(--gold-light);
+    transform: translateY(-2px);
+}
+
+@media (max-width: 480px) {
+    .scroll-top {
+        bottom: var(--space-lg);
+        right: var(--space-lg);
+    }
+}
