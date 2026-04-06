@@ -225,3 +225,22 @@
     object-fit: contain;
     filter: drop-shadow(0 4px 12px rgba(201, 168, 76, 0.3));
 }
+
+.h2h-block-three {
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: var(--space-lg);
+}
+
+.h2h-block-three .h2h-team {
+    align-items: center;
+    text-align: center;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    padding: var(--space-lg);
+}
+
+@media (max-width: 640px) {
+    .h2h-block-three {
+        grid-template-columns: 1fr;
+    }
+}

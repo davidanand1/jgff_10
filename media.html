@@ -137,7 +137,7 @@
             // ── Weekly Recaps ──
             async function fetchRecaps() {
                 try {
-                    const url = `https://www.googleapis.com/drive/v3/files?q='${DRIVE_FOLDERS.NEWS}'+in+parents+and+mimeType='application/pdf'&orderBy=createdTime+desc&fields=files(id,name,createdTime)&key=${GOOGLE_API_KEY}`;
+                    const url = `https://www.googleapis.com/drive/v3/files?q='${DRIVE_FOLDERS.NEWS}'+in+parents+and+(mimeType='application/pdf'+or+mimeType='application/vnd.google-apps.document')&orderBy=createdTime+desc&fields=files(id,name,createdTime,mimeType)&key=${GOOGLE_API_KEY}`;
                     const res = await fetch(url);
                     const data = await res.json();
                     const files = (data.files || []).filter(f => f.name.includes('JGFF Week'));
@@ -147,16 +147,22 @@
                         return;
                     }
 
-                    document.getElementById('recapsGrid').innerHTML = files.map(f => `
-                        <a href="https://drive.google.com/file/d/${f.id}/view"
-                           target="_blank" class="article-card card">
-                            <div class="article-meta">
-                                <span class="article-date">${formatDate(f.createdTime)}</span>
-                            </div>
-                            <h4 class="article-title">${cleanName(f.name)}</h4>
-                            <span class="article-link">Read →</span>
-                        </a>
-                    `).join('');
+                    document.getElementById('recapsGrid').innerHTML = files.map(f => {
+                        const isPdf = f.mimeType === 'application/pdf';
+                        const href = isPdf
+                            ? `https://drive.google.com/file/d/${f.id}/view`
+                            : `/article.html?id=${f.id}`;
+                        const target = isPdf ? 'target="_blank"' : '';
+                        return `
+                            <a href="${href}" ${target} class="article-card card">
+                                <div class="article-meta">
+                                    <span class="article-date">${formatDate(f.createdTime)}</span>
+                                </div>
+                                <h4 class="article-title">${cleanName(f.name)}</h4>
+                                <span class="article-link">Read →</span>
+                            </a>
+                        `;
+                    }).join('');
 
                 } catch (err) {
                     console.error('Recaps fetch error:', err);

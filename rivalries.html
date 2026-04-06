@@ -241,69 +241,89 @@
                 }
 
                 // Content
-                document.getElementById('rivalryContent').innerHTML = `
-                    <!-- Head to Head -->
-                    <div class="h2h-block">
-                        <div class="h2h-team">
-                            <img src="${team1Logo}"
-                                 alt="${team1}"
-                                 class="h2h-logo"
-                                 onerror="this.style.display='none'">
-                            <h2 class="h2h-team-name">${team1}</h2>
-                            <p class="h2h-coach">${coach1}</p>
-                            <span class="h2h-wins">${wins1} <span class="h2h-wins-label">wins</span></span>
-                        </div>
+// Check if WCI Derby (3 team round robin)
+const isThreeTeam = tab === 'WCI Derby';
 
-                        <div class="h2h-center">
-    <span class="h2h-vs">VS</span>
-    <img src="${logoPath}"
-         alt="${tab} logo"
-         class="h2h-rivalry-logo"
-         onerror="this.style.display='none'">
-</div>
+const team3 = isThreeTeam ? (rows[2]?.[4] || '?') : null;
+const coach3 = isThreeTeam ? (rows[3]?.[4] || '?') : null;
+const wins3 = isThreeTeam ? (rows[4]?.[4] || '0') : null;
+const team3Logo = isThreeTeam ? `/assets/logos/${team3.replace(/\s+/g, '_')}.png` : null;
 
-                        <div class="h2h-team h2h-team-right">
-                            <img src="${team2Logo}"
-                                 alt="${team2}"
-                                 class="h2h-logo"
-                                 onerror="this.style.display='none'">
-                            <h2 class="h2h-team-name">${team2}</h2>
-                            <p class="h2h-coach">${coach2}</p>
-                            <span class="h2h-wins">${wins2} <span class="h2h-wins-label">wins</span></span>
-                        </div>
-                    </div>
+document.getElementById('rivalryContent').innerHTML = `
+    <!-- Head to Head -->
+    ${isThreeTeam ? `
+        <div class="h2h-block h2h-block-three">
+            <div class="h2h-team">
+                <img src="${team1Logo}" alt="${team1}" class="h2h-logo" onerror="this.style.display='none'">
+                <h2 class="h2h-team-name">${team1}</h2>
+                <p class="h2h-coach">${coach1}</p>
+                <span class="h2h-wins">${wins1} <span class="h2h-wins-label">wins</span></span>
+            </div>
+            <div class="h2h-team">
+                <img src="${team2Logo}" alt="${team2}" class="h2h-logo" onerror="this.style.display='none'">
+                <h2 class="h2h-team-name">${team2}</h2>
+                <p class="h2h-coach">${coach2}</p>
+                <span class="h2h-wins">${wins2} <span class="h2h-wins-label">wins</span></span>
+            </div>
+            <div class="h2h-team">
+                <img src="${team3Logo}" alt="${team3}" class="h2h-logo" onerror="this.style.display='none'">
+                <h2 class="h2h-team-name">${team3}</h2>
+                <p class="h2h-coach">${coach3}</p>
+                <span class="h2h-wins">${wins3} <span class="h2h-wins-label">wins</span></span>
+            </div>
+        </div>
+    ` : `
+        <div class="h2h-block">
+            <div class="h2h-team">
+                <img src="${team1Logo}" alt="${team1}" class="h2h-logo" onerror="this.style.display='none'">
+                <h2 class="h2h-team-name">${team1}</h2>
+                <p class="h2h-coach">${coach1}</p>
+                <span class="h2h-wins">${wins1} <span class="h2h-wins-label">wins</span></span>
+            </div>
+            <div class="h2h-center">
+                <span class="h2h-vs">VS</span>
+                <img src="${logoPath}" alt="${tab} logo" class="h2h-rivalry-logo" onerror="this.style.display='none'">
+            </div>
+            <div class="h2h-team h2h-team-right">
+                <img src="${team2Logo}" alt="${team2}" class="h2h-logo" onerror="this.style.display='none'">
+                <h2 class="h2h-team-name">${team2}</h2>
+                <p class="h2h-coach">${coach2}</p>
+                <span class="h2h-wins">${wins2} <span class="h2h-wins-label">wins</span></span>
+            </div>
+        </div>
+    `}
 
-                    <!-- Matchup History -->
-                    ${historyRows.length > 0 ? `
-                        <div class="rivalry-history">
-                            <h2 class="section-title">Matchup History</h2>
-                            <div class="table-wrapper">
-                                <table>
-                                    <thead>
-                                        <tr>
-    ${Array.from(
-        {length: Math.max(...historyRows.map(r => r.length))},
-        (_, i) => `<th>${historyRows[0][i] || ''}</th>`
-    ).join('')}
-</tr>
-                                    </thead>
-                                    <tbody>
-    ${historyRows.slice(1).map(row => {
-        const maxCols = Math.max(...historyRows.map(r => r.length));
-        return `
-            <tr>
-                ${Array.from({length: maxCols}, (_, i) =>
-                    `<td>${row[i] || ''}</td>`
-                ).join('')}
-            </tr>
-        `;
-    }).join('')}
-</tbody>
-                                </table>
-                            </div>
-                        </div>
-                    ` : ''}
-                `;
+    <!-- Matchup History -->
+    ${historyRows.length > 0 ? `
+        <div class="rivalry-history">
+            <h2 class="section-title">Matchup History</h2>
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            ${Array.from(
+                                {length: Math.max(...historyRows.map(r => r.length))},
+                                (_, i) => `<th>${historyRows[0][i] || ''}</th>`
+                            ).join('')}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${historyRows.slice(1).map(row => {
+                            const maxCols = Math.max(...historyRows.map(r => r.length));
+                            return `
+                                <tr>
+                                    ${Array.from({length: maxCols}, (_, i) =>
+                                        `<td>${row[i] || ''}</td>`
+                                    ).join('')}
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    ` : ''}
+`;
             }
 
             // ── Global handlers ──

@@ -14,7 +14,7 @@
 
         <section class="page-header">
             <div class="container">
-                <a href="/index.html" class="btn btn-back">← Back to Home</a>
+            <button class="btn btn-back" id="backBtn">← Back</button>
                 <div id="articleHeader">
                     <div class="skeleton skeleton-text" style="width:60%;height:2rem;"></div>
                     <div class="skeleton skeleton-text" style="width:30%;margin-top:8px;"></div>
@@ -92,7 +92,15 @@
                     '<p style="color:var(--text-muted)">Article not found.</p>';
                 return;
             }
-
+                // Smart back button
+                document.getElementById('backBtn').addEventListener('click', () => {
+                    if (document.referrer && document.referrer.includes(window.location.hostname)) {
+                        history.back();
+                    } else {
+                        window.location.href = '/index.html';
+                    }
+                });
+                
             // ── Fetch Google Doc ──
             // ── Fetch Google Doc ──
             async function fetchDoc() {
