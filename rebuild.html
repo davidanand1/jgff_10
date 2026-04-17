@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JG&FF | Data Rebuild</title>
+    <link rel="stylesheet" href="/css/global.css">
+    <link rel="stylesheet" href="/css/nav.css">
+</head>
+<body>
+    <div class="page-wrapper">
+        <section class="page-header">
+            <div class="container">
+                <h1 class="page-title">Data Rebuild</h1>
+                <div class="gold-divider"></div>
+            </div>
+        </section>
+
+        <section class="section">
+            <div class="container" style="max-width:600px;">
+                <div class="card" style="padding: var(--space-xl);">
+                    <p style="color:var(--text-secondary); margin-bottom: var(--space-lg);">
+                        This will pull all historical roster and scoring data from Sleeper 
+                        across all seasons and save it to Firebase. This may take a minute or two.
+                    </p>
+                    <button id="rebuildBtn" class="btn btn-primary">Start Rebuild</button>
+                </div>
+
+                <div id="log" style="margin-top: var(--space-xl); display:flex; flex-direction:column; gap:var(--space-sm);">
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <script src="/js/config.js"></script>
+    <script src="/js/nav.js"></script>
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js';
+        import { getDatabase, ref, set } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-database.js';
+
+        (async () => {
+            await new Promise(resolve => {
+                if (document.readyState === 'complete') resolve();
+                else window.addEventListener('load', resolve);
+            });
+
+            const { FIREBASE, SLEEPER_LEAGUE_ID } = window.CONFIG;
+            const app = initializeApp(FIREBASE);
+            const db = getDatabase(app);
+
+            const logEl = document.getElementById('log');
+            const rebuildBtn = document.getElementById('rebuildBtn');
+
+            function log(msg, type = 'info') {
+                const colors = {
+                    info: 'var(--text-secondary)',
+                    success: 'var(--success)',
+                    error: 'var(--error)',
+                    heading: 'var(--gold)'
+                };
+                const el = document.createElement('p');
+                el.style.color = colors[type] || colors.info;
+                el.style.fontSize = '0.9rem';
+                el.textContent = msg;
+                logEl.appendChild(el);
+                logEl.scrollTop = logEl.scrollHeight;
+            }
+
+            // ── Fetch all league IDs by walking back through history ──
+            async function fetchAllLeagueIds() {
+    const ids = [];
+    let currentId = SLEEPER_LEAGUE_ID;
+
+    while (currentId && currentId !== '0' && currentId !== 0) {
+        ids.push(currentId);
+        const res = await fetch(`https://api.sleeper.app/v1/league/${currentId}`);
+        if (!res.ok) break;
+        const data = await res.json();
+        if (!data || !data.previous_league_id) break;
+        currentId = data.previous_league_id;
+    }
+
+    return ids.reverse();
+}
+            // ── Fetch all players from Sleeper ──
+            async function fetchAllPlayers() {
+                log('Fetching player database...');
+                const res = await fetch('https://api.sleeper.app/v1/players/nfl');
+                return await res.json();
+            }
+
+            // ── Process one season ──
+            async function processSeason(leagueId, playerDb) {
+                const [leagueRes, rostersRes, usersRes] = await Promise.all([
+                    fetch(`https://api.sleeper.app/v1/league/${leagueId}`),
+                    fetch(`https://api.sleeper.app/v1/league/${leagueId}/rosters`),
+                    fetch(`https://api.sleeper.app/v1/league/${leagueId}/users`)
+                ]);
+
+                const league = await leagueRes.json();
+                const rosters = await rostersRes.json();
+                const users = await usersRes.json();
+
+                const season = league.season;
+                const totalWeeks = (league.settings.playoff_week_start || 15) - 1;
+
+                const userMap = {};
+                users.forEach(u => userMap[u.user_id] = u);
+
+                // Map roster_id to team name
+                // Map roster_id to owner_id (stable across seasons)
+                const rosterTeamMap = {};
+                rosters.forEach(r => {
+                    rosterTeamMap[r.roster_id] = r.owner_id;
+                });
+
+                // Track points per player per team this season
+                const seasonData = {}; // { teamName: { playerId: points } }
+
+                for (let week = 1; week <= totalWeeks; week++) {
+                    const matchupsRes = await fetch(
+                        `https://api.sleeper.app/v1/league/${leagueId}/matchups/${week}`
+                    );
+                    const matchups = await matchupsRes.json();
+
+                    matchups.forEach(matchup => {
+                        const teamName = rosterTeamMap[matchup.roster_id];
+                        if (!teamName) return;
+                        if (!seasonData[teamName]) seasonData[teamName] = {};
+
+                        const playerPoints = matchup.players_points || {};
+                        Object.entries(playerPoints).forEach(([playerId, points]) => {
+                            if (!seasonData[teamName][playerId]) seasonData[teamName][playerId] = 0;
+                            seasonData[teamName][playerId] += points;
+                        });
+                    });
+                }
+
+                return { season, seasonData, rosterTeamMap };
+            }
+
+            // ── Main Rebuild ──
+            rebuildBtn.addEventListener('click', async () => {
+                rebuildBtn.disabled = true;
+                rebuildBtn.textContent = 'Rebuilding...';
+                logEl.innerHTML = '';
+
+                try {
+                    // Step 1: Get all league IDs
+                    log('Fetching all league IDs...', 'heading');
+                    const leagueIds = await fetchAllLeagueIds();
+                    log(`Found ${leagueIds.length} seasons`, 'success');
+
+                    // Step 2: Fetch player database
+                    const playerDb = await fetchAllPlayers();
+                    log(`Loaded ${Object.keys(playerDb).length} players`, 'success');
+
+                    // Step 3: Process each season
+                    // allTimeData: { teamName: { playerId: { seasons: [], points: number } } }
+                    const allTimeData = {};
+
+                    for (const leagueId of leagueIds) {
+                        log(`Processing season for league ${leagueId}...`, 'heading');
+                        const { season, seasonData } = await processSeason(leagueId, playerDb);
+                        log(`Season ${season} processed`, 'success');
+
+                        Object.entries(seasonData).forEach(([teamName, players]) => {
+                            if (!allTimeData[teamName]) allTimeData[teamName] = {};
+
+                            Object.entries(players).forEach(([playerId, points]) => {
+                                if (!allTimeData[teamName][playerId]) {
+                                    allTimeData[teamName][playerId] = { seasons: [], points: 0 };
+                                }
+                                if (!allTimeData[teamName][playerId].seasons.includes(season)) {
+                                    allTimeData[teamName][playerId].seasons.push(season);
+                                }
+                                allTimeData[teamName][playerId].points += points;
+                            });
+                        });
+                    }
+
+                    // Step 4: Compute top 3 franchise cornerstones per team
+                    log('Computing franchise cornerstones...', 'heading');
+                    const franchiseData = {};
+
+                    // Get current season's owner_id to team name mapping
+                    const currentRostersRes = await fetch(`https://api.sleeper.app/v1/league/${SLEEPER_LEAGUE_ID}/rosters`);
+                    const currentRosters = await currentRostersRes.json();
+                    const currentUsersRes = await fetch(`https://api.sleeper.app/v1/league/${SLEEPER_LEAGUE_ID}/users`);
+                    const currentUsers = await currentUsersRes.json();
+
+                    const currentUserMap = {};
+                    currentUsers.forEach(u => currentUserMap[u.user_id] = u);
+
+                    const ownerToCurrentTeam = {};
+                    currentRosters.forEach(r => {
+                        const user = currentUserMap[r.owner_id];
+                        const teamName = user?.metadata?.team_name || user?.display_name || `Team ${r.roster_id}`;
+                        ownerToCurrentTeam[r.owner_id] = teamName;
+                    });
+
+                    Object.entries(allTimeData).forEach(([ownerId, players]) => {
+                        const teamName = ownerToCurrentTeam[ownerId] || ownerId;
+                        const sorted = Object.entries(players)
+                        .map(([playerId, data]) => {
+                            const player = playerDb[playerId];
+                            return {
+                                playerId,
+                                name: player ? `${player.first_name} ${player.last_name}` : 'Unknown',
+                                position: player?.position || '—',
+                                seasons: data.seasons.length,
+                                years: data.seasons.sort().join(', '),
+                                points: Math.round(data.points * 10) / 10
+                            };
+                        })
+                            .filter(p => p.name !== 'Unknown' && p.position !== 'DEF' && p.position !== 'K')
+.sort((a, b) => b.points - a.points)
+.slice(0, 3);
+
+                        franchiseData[teamName] = sorted;
+                        });
+
+                        // Step 5: Save to Firebase
+                        log('Saving to Firebase...', 'heading');
+
+                        // Sanitize team name keys for Firebase
+                        const sanitizedFranchiseData = {};
+                        Object.entries(franchiseData).forEach(([teamName, players]) => {
+                            const safeKey = teamName.replace(/[.#$\/\[\]]/g, '_');
+                            sanitizedFranchiseData[safeKey] = players;
+                        });
+
+                        await set(ref(db, 'franchise-cornerstones'), null);
+                        await set(ref(db, 'franchise-cornerstones'), sanitizedFranchiseData);
+
+                    // Step 6: Compute home page all-time stats
+                    log('Computing all-time stats...', 'heading');
+                    const allTimeStats = computeAllTimeStats(allTimeData, playerDb);
+                    await set(ref(db, 'all-time-stats'), allTimeStats);
+                    log('✓ All-time stats saved!', 'success');
+
+                    log('Rebuild complete!', 'success');
+                    rebuildBtn.textContent = 'Rebuild Complete ✓';
+
+                } catch (err) {
+                    console.error(err);
+                    log(`Error: ${err.message}`, 'error');
+                    rebuildBtn.disabled = false;
+                    rebuildBtn.textContent = 'Retry Rebuild';
+                }
+            });
+
+            function computeAllTimeStats(allTimeData, playerDb) {
+                let mostSeasonsPlayer = null;
+                let mostSeasonsCount = 0;
+                let mostSeasonsTeam = null;
+
+                let highestScorerPlayer = null;
+                let highestScorerPoints = 0;
+                let highestScorerTeam = null;
+
+                let mostLoyalTeam = null;
+                let mostLoyalCount = 0;
+
+                Object.entries(allTimeData).forEach(([teamName, players]) => {
+                    const uniquePlayers = Object.keys(players).length;
+                    if (uniquePlayers < mostLoyalCount || mostLoyalCount === 0) {
+                        mostLoyalCount = uniquePlayers;
+                        mostLoyalTeam = teamName;
+                    }
+
+                    Object.entries(players).forEach(([playerId, data]) => {
+                        const player = playerDb[playerId];
+                        const name = player ? `${player.first_name} ${player.last_name}` : null;
+                        if (!name) return;
+
+                        if (data.seasons.length > mostSeasonsCount) {
+                            mostSeasonsCount = data.seasons.length;
+                            mostSeasonsPlayer = name;
+                            mostSeasonsTeam = teamName;
+                        }
+
+                        if (data.points > highestScorerPoints) {
+                            highestScorerPoints = data.points;
+                            highestScorerPlayer = name;
+                            highestScorerTeam = teamName;
+                        }
+                    });
+                });
+
+                return {
+                    mostLoyalTeam: { team: mostLoyalTeam, value: mostLoyalCount },
+                    mostSeasonsPlayer: { player: mostSeasonsPlayer, team: mostSeasonsTeam, seasons: mostSeasonsCount },
+                    highestScorerPlayer: { player: highestScorerPlayer, team: highestScorerTeam, points: Math.round(highestScorerPoints * 10) / 10 }
+                };
+            }
+
+        })();
+    </script>
+</body>
+</html>

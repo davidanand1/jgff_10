@@ -100,6 +100,7 @@
     display: flex;
     flex-wrap: wrap;
     gap: var(--space-lg);
+    justify-content: center;
 }
 
 .trophy-item {
@@ -211,4 +212,90 @@
     text-transform: uppercase;
     font-size: 0.85rem;
     font-weight: 600;
+}
+
+/* ── Franchise Cornerstones ── */
+.cornerstones-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--space-md);
+}
+
+@media (max-width: 640px) {
+    .cornerstones-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.cornerstone-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: var(--space-xs);
+    padding: var(--space-md);
+}
+
+.cornerstone-position {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--gold);
+    background: var(--gold-subtle);
+    padding: 2px 10px;
+    border-radius: 20px;
+}
+
+.cornerstone-name {
+    font-family: var(--font-serif);
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.cornerstone-stats {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+}
+
+.cornerstone-stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+}
+
+.cornerstone-stat-value {
+    font-family: var(--font-serif);
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.cornerstone-stat-label {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.cornerstone-divider {
+    color: var(--text-muted);
+    font-size: 1.2rem;
+}
+
+.cornerstone-years {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+.cornerstone-img {
+    width: 80px;
+    height: 80px;
+    object-fit: cover;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    margin-bottom: var(--space-sm);
 }
