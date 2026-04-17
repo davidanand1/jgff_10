@@ -20,14 +20,12 @@
             <div class="container" style="max-width:600px;">
                 <div class="card" style="padding: var(--space-xl);">
                     <p style="color:var(--text-secondary); margin-bottom: var(--space-lg);">
-                        This will pull all historical roster and scoring data from Sleeper 
-                        across all seasons and save it to Firebase. This may take a minute or two.
+                        This will pull all historical roster and scoring data from Sleeper
+                        across all seasons and save it to Firebase. This may take a few minutes.
                     </p>
                     <button id="rebuildBtn" class="btn btn-primary">Start Rebuild</button>
                 </div>
-
-                <div id="log" style="margin-top: var(--space-xl); display:flex; flex-direction:column; gap:var(--space-sm);">
-                </div>
+                <div id="log" style="margin-top: var(--space-xl); display:flex; flex-direction:column; gap:var(--space-sm);"></div>
             </div>
         </section>
     </div>
@@ -40,8 +38,12 @@
 
         (async () => {
             await new Promise(resolve => {
-                if (document.readyState === 'complete') resolve();
-                else window.addEventListener('load', resolve);
+                if (document.readyState === 'complete' && window.CONFIG) resolve();
+                else {
+                    const check = setInterval(() => {
+                        if (window.CONFIG) { clearInterval(check); resolve(); }
+                    }, 10);
+                }
             });
 
             const { FIREBASE, SLEEPER_LEAGUE_ID } = window.CONFIG;
@@ -52,12 +54,7 @@
             const rebuildBtn = document.getElementById('rebuildBtn');
 
             function log(msg, type = 'info') {
-                const colors = {
-                    info: 'var(--text-secondary)',
-                    success: 'var(--success)',
-                    error: 'var(--error)',
-                    heading: 'var(--gold)'
-                };
+                const colors = { info: 'var(--text-secondary)', success: 'var(--success)', error: 'var(--error)', heading: 'var(--gold)' };
                 const el = document.createElement('p');
                 el.style.color = colors[type] || colors.info;
                 el.style.fontSize = '0.9rem';
@@ -66,31 +63,42 @@
                 logEl.scrollTop = logEl.scrollHeight;
             }
 
-            // ── Fetch all league IDs by walking back through history ──
+            // ── Fetch all league IDs ──
             async function fetchAllLeagueIds() {
-    const ids = [];
-    let currentId = SLEEPER_LEAGUE_ID;
+                const ids = [];
+                let currentId = SLEEPER_LEAGUE_ID;
+                while (currentId && currentId !== '0' && currentId !== 0) {
+                    ids.push(currentId);
+                    const res = await fetch(`https://api.sleeper.app/v1/league/${currentId}`);
+                    if (!res.ok) break;
+                    const data = await res.json();
+                    if (!data || !data.previous_league_id) break;
+                    currentId = data.previous_league_id;
+                }
+                return ids.reverse();
+            }
 
-    while (currentId && currentId !== '0' && currentId !== 0) {
-        ids.push(currentId);
-        const res = await fetch(`https://api.sleeper.app/v1/league/${currentId}`);
-        if (!res.ok) break;
-        const data = await res.json();
-        if (!data || !data.previous_league_id) break;
-        currentId = data.previous_league_id;
-    }
-
-    return ids.reverse();
-}
-            // ── Fetch all players from Sleeper ──
+            // ── Fetch all players ──
             async function fetchAllPlayers() {
                 log('Fetching player database...');
                 const res = await fetch('https://api.sleeper.app/v1/players/nfl');
                 return await res.json();
             }
 
+            // ── Fetch transactions ──
+            async function fetchTransactions(leagueId, totalWeeks) {
+                const allTransactions = [];
+                for (let week = 1; week <= totalWeeks; week++) {
+                    const res = await fetch(`https://api.sleeper.app/v1/league/${leagueId}/transactions/${week}`);
+                    if (!res.ok) continue;
+                    const transactions = await res.json();
+                    allTransactions.push(...(transactions || []));
+                }
+                return allTransactions;
+            }
+
             // ── Process one season ──
-            async function processSeason(leagueId, playerDb) {
+            async function processSeason(leagueId, playerDb, ownerToCurrentTeam) {
                 const [leagueRes, rostersRes, usersRes] = await Promise.all([
                     fetch(`https://api.sleeper.app/v1/league/${leagueId}`),
                     fetch(`https://api.sleeper.app/v1/league/${leagueId}/rosters`),
@@ -102,41 +110,226 @@
                 const users = await usersRes.json();
 
                 const season = league.season;
-                const totalWeeks = (league.settings.playoff_week_start || 15) - 1;
+                const playoffWeekStart = league.settings.playoff_week_start || 15;
+                const totalWeeks = playoffWeekStart - 1;
+                const totalWeeksIncludingPlayoffs = totalWeeks + 4;
 
                 const userMap = {};
                 users.forEach(u => userMap[u.user_id] = u);
 
-                // Map roster_id to team name
-                // Map roster_id to owner_id (stable across seasons)
-                const rosterTeamMap = {};
+                const rosterOwnerMap = {};
+                rosters.forEach(r => rosterOwnerMap[r.roster_id] = r.owner_id);
+
+                const getTeamName = (rosterId) => {
+                    const ownerId = rosterOwnerMap[rosterId];
+                    return ownerToCurrentTeam[ownerId] || ownerId;
+                };
+
+                // Per team season records (from roster settings)
+                const teamSeasonPoints = {};
+                const teamSeasonRecord = {};
                 rosters.forEach(r => {
-                    rosterTeamMap[r.roster_id] = r.owner_id;
+                    const teamName = getTeamName(r.roster_id);
+                    teamSeasonPoints[teamName] = 0;
+                    const pf = (r.settings?.fpts || 0) + (r.settings?.fpts_decimal || 0) / 100;
+                    const pa = (r.settings?.fpts_against || 0) + (r.settings?.fpts_against_decimal || 0) / 100;
+                    teamSeasonRecord[teamName] = {
+                        wins: r.settings?.wins || 0,
+                        losses: r.settings?.losses || 0,
+                        pf: Math.round(pf * 100) / 100,
+                        pa: Math.round(pa * 100) / 100
+                    };
                 });
 
-                // Track points per player per team this season
-                const seasonData = {}; // { teamName: { playerId: points } }
+                const seasonPlayerData = {};
 
-                for (let week = 1; week <= totalWeeks; week++) {
-                    const matchupsRes = await fetch(
-                        `https://api.sleeper.app/v1/league/${leagueId}/matchups/${week}`
-                    );
+                // Weekly tracking
+                let highestTeamWeekScore = { score: 0, team: '', week: 0, season };
+                let highestPlayerWeekScore = { score: 0, player: '', team: '', week: 0, season };
+                let largestMargin = { margin: 0, winner: '', loser: '', week: 0, season };
+                let closestMatchup = { margin: Infinity, winner: '', loser: '', week: 0, season };
+                let luckyWin = { score: Infinity, winner: '', loserScore: 0, week: 0, season };
+                let unluckyLoss = { score: 0, loser: '', winnerScore: 0, week: 0, season };
+                let mostPlayoffPoints = { score: 0, team: '', week: 0, season };
+                let largestPlayoffMargin = { margin: 0, winner: '', loser: '', season };
+                let closestChampionship = { margin: Infinity, winner: '', loser: '', season };
+                const weeklyHighScorer = {};
+
+                for (let week = 1; week <= totalWeeksIncludingPlayoffs; week++) {
+                    const isPlayoff = week >= playoffWeekStart;
+                    const matchupsRes = await fetch(`https://api.sleeper.app/v1/league/${leagueId}/matchups/${week}`);
+                    if (!matchupsRes.ok) continue;
                     const matchups = await matchupsRes.json();
+                    if (!matchups || !matchups.length) continue;
 
-                    matchups.forEach(matchup => {
-                        const teamName = rosterTeamMap[matchup.roster_id];
-                        if (!teamName) return;
-                        if (!seasonData[teamName]) seasonData[teamName] = {};
+                    const groups = {};
+                    matchups.forEach(m => {
+                        if (!groups[m.matchup_id]) groups[m.matchup_id] = [];
+                        groups[m.matchup_id].push(m);
+                    });
 
-                        const playerPoints = matchup.players_points || {};
-                        Object.entries(playerPoints).forEach(([playerId, points]) => {
-                            if (!seasonData[teamName][playerId]) seasonData[teamName][playerId] = 0;
-                            seasonData[teamName][playerId] += points;
+                    // Per team per week
+                    matchups.forEach(m => {
+                        const teamName = getTeamName(m.roster_id);
+                        const points = m.points || 0;
+
+                        if (!isPlayoff) {
+                            teamSeasonPoints[teamName] = (teamSeasonPoints[teamName] || 0) + points;
+                            if (!weeklyHighScorer[week] || points > weeklyHighScorer[week].score) {
+                                weeklyHighScorer[week] = { score: points, team: teamName };
+                            }
+                        }
+
+                        if (points > highestTeamWeekScore.score) {
+                            highestTeamWeekScore = { score: points, team: teamName, week, season };
+                        }
+
+                        if (isPlayoff && points > mostPlayoffPoints.score) {
+                            mostPlayoffPoints = { score: points, team: teamName, week, season };
+                        }
+
+                        const playerPoints = m.players_points || {};
+                        Object.entries(playerPoints).forEach(([playerId, pts]) => {
+                            if (pts > highestPlayerWeekScore.score) {
+                                const player = playerDb[playerId];
+                                const playerName = player ? `${player.first_name} ${player.last_name}` : 'Unknown';
+                                highestPlayerWeekScore = { score: pts, player: playerName, team: teamName, week, season };
+                            }
                         });
+
+                        if (!isPlayoff) {
+                            if (!seasonPlayerData[teamName]) seasonPlayerData[teamName] = {};
+                            Object.entries(playerPoints).forEach(([playerId, pts]) => {
+                                if (!seasonPlayerData[teamName][playerId]) {
+                                    seasonPlayerData[teamName][playerId] = { seasons: [], points: 0 };
+                                }
+                                if (!seasonPlayerData[teamName][playerId].seasons.includes(season)) {
+                                    seasonPlayerData[teamName][playerId].seasons.push(season);
+                                }
+                                seasonPlayerData[teamName][playerId].points += pts;
+                            });
+                        }
+                    });
+
+                    // Per matchup pair
+                    Object.values(groups).forEach(pair => {
+                        if (pair.length < 2) return;
+                        const [t1, t2] = pair;
+                        const score1 = t1.points || 0;
+                        const score2 = t2.points || 0;
+                        const margin = Math.abs(score1 - score2);
+                        const winner = score1 > score2 ? getTeamName(t1.roster_id) : getTeamName(t2.roster_id);
+                        const loser = score1 > score2 ? getTeamName(t2.roster_id) : getTeamName(t1.roster_id);
+                        const winScore = Math.max(score1, score2);
+                        const lossScore = Math.min(score1, score2);
+
+                        if (!isPlayoff) {
+                            if (margin > largestMargin.margin) {
+                                largestMargin = { margin: Math.round(margin * 100) / 100, winner, loser, week, season };
+                            }
+                            if (margin < closestMatchup.margin) {
+                                closestMatchup = { margin: Math.round(margin * 100) / 100, winner, loser, week, season };
+                            }
+                            if (winScore < luckyWin.score) {
+                                luckyWin = { score: Math.round(winScore * 100) / 100, winner, loserScore: Math.round(lossScore * 100) / 100, week, season };
+                            }
+                            if (lossScore > unluckyLoss.score) {
+                                unluckyLoss = { score: Math.round(lossScore * 100) / 100, loser, winnerScore: Math.round(winScore * 100) / 100, week, season };
+                            }
+                        }
+
+                        if (isPlayoff && margin > largestPlayoffMargin.margin) {
+                            largestPlayoffMargin = { margin: Math.round(margin * 100) / 100, winner, loser, season };
+                        }
+
+                       // Championship is typically 3 weeks into playoffs
+                        const championshipWeek = playoffWeekStart + 2;
+                        if (isPlayoff && week === championshipWeek && margin < closestChampionship.margin) {
+                          closestChampionship = { margin: Math.round(margin * 100) / 100, winner, loser, season };
+}
                     });
                 }
 
-                return { season, seasonData, rosterTeamMap };
+                // Season record stats
+                const bestRecord = Object.entries(teamSeasonRecord).reduce((best, [team, record]) => {
+                    const winPct = record.wins / (record.wins + record.losses) || 0;
+                    return winPct > best.winPct ? { team, wins: record.wins, losses: record.losses, winPct } : best;
+                }, { team: '', wins: 0, losses: 0, winPct: 0 });
+
+               const worstRecord = Object.entries(teamSeasonRecord).reduce((worst, [team, record]) => {
+                    const totalGames = record.wins + record.losses;
+                    if (totalGames === 0) return worst;
+                    const winPct = record.wins / totalGames;
+                    return winPct < worst.winPct ? { team, wins: record.wins, losses: record.losses, winPct } : worst;
+                    }, { team: '', wins: 0, losses: 0, winPct: Infinity });
+
+                const bestPlusMinus = Object.entries(teamSeasonRecord).reduce((best, [team, record]) => {
+                    const pm = (record.pf || 0) - (record.pa || 0);
+                    return pm > best.pm ? { team, pm: Math.round(pm * 100) / 100 } : best;
+                }, { team: '', pm: -Infinity });
+
+                const worstPlusMinus = Object.entries(teamSeasonRecord).reduce((worst, [team, record]) => {
+                    const pm = (record.pf || 0) - (record.pa || 0);
+                    return pm < worst.pm ? { team, pm: Math.round(pm * 100) / 100 } : worst;
+                }, { team: '', pm: Infinity });
+
+                const mostSeasonPoints = Object.entries(teamSeasonPoints).reduce((best, [team, pts]) =>
+                    pts > best.pts ? { team, pts: Math.round(pts * 100) / 100 } : best,
+                    { team: '', pts: 0 }
+                );
+
+                // Transactions
+                log(`Fetching transactions for ${season}...`);
+                const transactions = await fetchTransactions(leagueId, totalWeeks);
+
+                const txByTeam = {};
+                const tradesByTeam = {};
+                transactions.forEach(tx => {
+                    if (!tx.roster_ids) return;
+                    tx.roster_ids.forEach(rosterId => {
+                        const teamName = getTeamName(rosterId);
+                        txByTeam[teamName] = (txByTeam[teamName] || 0) + 1;
+                        if (tx.type === 'trade') {
+                            tradesByTeam[teamName] = (tradesByTeam[teamName] || 0) + 1;
+                        }
+                    });
+                });
+
+                const mostTx = Object.entries(txByTeam).reduce((best, [team, count]) =>
+                    count > best.count ? { team, count } : best, { team: '', count: 0 });
+
+                const mostTrades = Object.entries(tradesByTeam).reduce((best, [team, count]) =>
+                    count > best.count ? { team, count } : best, { team: '', count: 0 });
+
+                // Weekly high scorer count
+                const weeklyHighScorerCount = {};
+                Object.values(weeklyHighScorer).forEach(({ team }) => {
+                    weeklyHighScorerCount[team] = (weeklyHighScorerCount[team] || 0) + 1;
+                });
+                const mostWeeksHighScorer = Object.entries(weeklyHighScorerCount).reduce((best, [team, count]) =>
+                    count > best.count ? { team, count } : best, { team: '', count: 0 });
+
+                return {
+                    season,
+                    seasonPlayerData,
+                    highestTeamWeekScore,
+                    highestPlayerWeekScore,
+                    largestMargin,
+                    closestMatchup,
+                    luckyWin,
+                    unluckyLoss,
+                    mostPlayoffPoints,
+                    largestPlayoffMargin,
+                    closestChampionship,
+                    bestRecord: { ...bestRecord, season },
+                    worstRecord: { ...worstRecord, season },
+                    bestPlusMinus: { ...bestPlusMinus, season },
+                    worstPlusMinus: { ...worstPlusMinus, season },
+                    mostTx: { ...mostTx, season },
+                    mostTrades: { ...mostTrades, season },
+                    mostSeasonPoints: { ...mostSeasonPoints, season },
+                    mostWeeksHighScorer: { ...mostWeeksHighScorer, season }
+                };
             }
 
             // ── Main Rebuild ──
@@ -146,44 +339,15 @@
                 logEl.innerHTML = '';
 
                 try {
-                    // Step 1: Get all league IDs
                     log('Fetching all league IDs...', 'heading');
                     const leagueIds = await fetchAllLeagueIds();
                     log(`Found ${leagueIds.length} seasons`, 'success');
 
-                    // Step 2: Fetch player database
+                    log('Fetching player database...', 'heading');
                     const playerDb = await fetchAllPlayers();
                     log(`Loaded ${Object.keys(playerDb).length} players`, 'success');
 
-                    // Step 3: Process each season
-                    // allTimeData: { teamName: { playerId: { seasons: [], points: number } } }
-                    const allTimeData = {};
-
-                    for (const leagueId of leagueIds) {
-                        log(`Processing season for league ${leagueId}...`, 'heading');
-                        const { season, seasonData } = await processSeason(leagueId, playerDb);
-                        log(`Season ${season} processed`, 'success');
-
-                        Object.entries(seasonData).forEach(([teamName, players]) => {
-                            if (!allTimeData[teamName]) allTimeData[teamName] = {};
-
-                            Object.entries(players).forEach(([playerId, points]) => {
-                                if (!allTimeData[teamName][playerId]) {
-                                    allTimeData[teamName][playerId] = { seasons: [], points: 0 };
-                                }
-                                if (!allTimeData[teamName][playerId].seasons.includes(season)) {
-                                    allTimeData[teamName][playerId].seasons.push(season);
-                                }
-                                allTimeData[teamName][playerId].points += points;
-                            });
-                        });
-                    }
-
-                    // Step 4: Compute top 3 franchise cornerstones per team
-                    log('Computing franchise cornerstones...', 'heading');
-                    const franchiseData = {};
-
-                    // Get current season's owner_id to team name mapping
+                    log('Fetching current team names...', 'heading');
                     const currentRostersRes = await fetch(`https://api.sleeper.app/v1/league/${SLEEPER_LEAGUE_ID}/rosters`);
                     const currentRosters = await currentRostersRes.json();
                     const currentUsersRes = await fetch(`https://api.sleeper.app/v1/league/${SLEEPER_LEAGUE_ID}/users`);
@@ -195,50 +359,267 @@
                     const ownerToCurrentTeam = {};
                     currentRosters.forEach(r => {
                         const user = currentUserMap[r.owner_id];
-                        const teamName = user?.metadata?.team_name || user?.display_name || `Team ${r.roster_id}`;
-                        ownerToCurrentTeam[r.owner_id] = teamName;
+                        ownerToCurrentTeam[r.owner_id] = user?.metadata?.team_name || user?.display_name || `Team ${r.roster_id}`;
                     });
 
-                    Object.entries(allTimeData).forEach(([ownerId, players]) => {
-                        const teamName = ownerToCurrentTeam[ownerId] || ownerId;
-                        const sorted = Object.entries(players)
-                        .map(([playerId, data]) => {
+                    const allTimePlayerData = {};
+                    const allTimeStats = {
+                        highestTeamWeekScore: { score: 0 },
+                        highestPlayerWeekScore: { score: 0 },
+                        largestMargin: { margin: 0 },
+                        closestMatchup: { margin: Infinity },
+                        luckyWin: { score: Infinity },
+                        unluckyLoss: { score: 0 },
+                        mostPlayoffPoints: { score: 0 },
+                        largestPlayoffMargin: { margin: 0 },
+                        closestChampionship: { margin: Infinity },
+                        bestRecord: { winPct: 0 },
+                        worstRecord: { winPct: Infinity },
+                        bestPlusMinus: { pm: -Infinity },
+                        worstPlusMinus: { pm: Infinity },
+                        mostTx: { count: 0 },
+                        mostTrades: { count: 0 },
+                        mostSeasonPoints: { pts: 0 },
+                        mostWeeksHighScorer: { count: 0 }
+                    };
+
+                    for (const leagueId of leagueIds) {
+                        log(`Processing league ${leagueId}...`, 'heading');
+                        const seasonData = await processSeason(leagueId, playerDb, ownerToCurrentTeam);
+                        log(`Season ${seasonData.season} complete`, 'success');
+
+                        // Merge player data
+                        Object.entries(seasonData.seasonPlayerData).forEach(([teamName, players]) => {
+                            if (!allTimePlayerData[teamName]) allTimePlayerData[teamName] = {};
+                            Object.entries(players).forEach(([playerId, data]) => {
+                                if (!allTimePlayerData[teamName][playerId]) {
+                                    allTimePlayerData[teamName][playerId] = { seasons: [], points: 0 };
+                                }
+                                data.seasons.forEach(s => {
+                                    if (!allTimePlayerData[teamName][playerId].seasons.includes(s)) {
+                                        allTimePlayerData[teamName][playerId].seasons.push(s);
+                                    }
+                                });
+                                allTimePlayerData[teamName][playerId].points += data.points;
+                            });
+                        });
+
+                        // Update all time records
+                        if (seasonData.highestTeamWeekScore.score > allTimeStats.highestTeamWeekScore.score)
+                            allTimeStats.highestTeamWeekScore = seasonData.highestTeamWeekScore;
+                        if (seasonData.highestPlayerWeekScore.score > allTimeStats.highestPlayerWeekScore.score)
+                            allTimeStats.highestPlayerWeekScore = seasonData.highestPlayerWeekScore;
+                        if (seasonData.largestMargin.margin > allTimeStats.largestMargin.margin)
+                            allTimeStats.largestMargin = seasonData.largestMargin;
+                        if (seasonData.closestMatchup.margin < allTimeStats.closestMatchup.margin)
+                            allTimeStats.closestMatchup = seasonData.closestMatchup;
+                        if (seasonData.luckyWin.score < allTimeStats.luckyWin.score)
+                            allTimeStats.luckyWin = seasonData.luckyWin;
+                        if (seasonData.unluckyLoss.score > allTimeStats.unluckyLoss.score)
+                            allTimeStats.unluckyLoss = seasonData.unluckyLoss;
+                        if (seasonData.mostPlayoffPoints.score > allTimeStats.mostPlayoffPoints.score)
+                            allTimeStats.mostPlayoffPoints = seasonData.mostPlayoffPoints;
+                        if (seasonData.largestPlayoffMargin.margin > allTimeStats.largestPlayoffMargin.margin)
+                            allTimeStats.largestPlayoffMargin = seasonData.largestPlayoffMargin;
+                        if (seasonData.closestChampionship.margin < allTimeStats.closestChampionship.margin)
+                            allTimeStats.closestChampionship = seasonData.closestChampionship;
+                        if (seasonData.bestRecord.winPct > allTimeStats.bestRecord.winPct)
+                            allTimeStats.bestRecord = seasonData.bestRecord;
+                        if (seasonData.worstRecord.winPct < allTimeStats.worstRecord.winPct)
+                            allTimeStats.worstRecord = seasonData.worstRecord;
+                        if (seasonData.bestPlusMinus.pm > allTimeStats.bestPlusMinus.pm)
+                            allTimeStats.bestPlusMinus = seasonData.bestPlusMinus;
+                        if (seasonData.worstPlusMinus.pm < allTimeStats.worstPlusMinus.pm)
+                            allTimeStats.worstPlusMinus = seasonData.worstPlusMinus;
+                        if (seasonData.mostTx.count > allTimeStats.mostTx.count)
+                            allTimeStats.mostTx = seasonData.mostTx;
+                        if (seasonData.mostTrades.count > allTimeStats.mostTrades.count)
+                            allTimeStats.mostTrades = seasonData.mostTrades;
+                        if (seasonData.mostSeasonPoints.pts > allTimeStats.mostSeasonPoints.pts)
+                            allTimeStats.mostSeasonPoints = seasonData.mostSeasonPoints;
+                        if (seasonData.mostWeeksHighScorer.count > allTimeStats.mostWeeksHighScorer.count)
+                            allTimeStats.mostWeeksHighScorer = seasonData.mostWeeksHighScorer;
+                    }
+
+                    // All-time player stats
+                    let allTimeTopScorer = { player: '', team: '', points: 0 };
+                    let mostLoyalPlayer = { player: '', team: '', seasons: 0 };
+                    let mostEfficientRoster = { team: '', count: Infinity };
+
+                    Object.entries(allTimePlayerData).forEach(([teamName, players]) => {
+                        const uniquePlayers = Object.keys(players).length;
+                        if (uniquePlayers < mostEfficientRoster.count) {
+                            mostEfficientRoster = { team: teamName, count: uniquePlayers };
+                        }
+                        Object.entries(players).forEach(([playerId, data]) => {
                             const player = playerDb[playerId];
-                            return {
-                                playerId,
-                                name: player ? `${player.first_name} ${player.last_name}` : 'Unknown',
-                                position: player?.position || '—',
-                                seasons: data.seasons.length,
-                                years: data.seasons.sort().join(', '),
-                                points: Math.round(data.points * 10) / 10
-                            };
-                        })
+                            if (!player) return;
+                            const name = `${player.first_name} ${player.last_name}`;
+                            if (data.points > allTimeTopScorer.points) {
+                                allTimeTopScorer = { player: name, team: teamName, points: Math.round(data.points * 10) / 10 };
+                            }
+                            if (data.seasons.length > mostLoyalPlayer.seasons) {
+                                mostLoyalPlayer = { player: name, team: teamName, seasons: data.seasons.length };
+                            }
+                        });
+                    });
+
+                    // Stats pool
+                    const statsPool = [
+                        {
+                            id: 'mostLoyalPlayer',
+                            label: 'Most Loyal Player',
+                            value: mostLoyalPlayer.player,
+                            sub: `${mostLoyalPlayer.seasons} seasons with ${mostLoyalPlayer.team}`
+                        },
+                        {
+                            id: 'allTimeTopScorer',
+                            label: 'All-Time Top Scorer',
+                            value: allTimeTopScorer.player,
+                            sub: `${allTimeTopScorer.points} pts for ${allTimeTopScorer.team}`
+                        },
+                        {
+                            id: 'mostEfficientRoster',
+                            label: 'Most Efficient Roster',
+                            value: mostEfficientRoster.team,
+                            sub: `Fewest unique players used (${mostEfficientRoster.count})`
+                        },
+                        {
+                            id: 'highestPlayerWeek',
+                            label: 'Highest Scoring Player (Single Week)',
+                            value: allTimeStats.highestPlayerWeekScore.player,
+                            sub: `${allTimeStats.highestPlayerWeekScore.score} pts — ${allTimeStats.highestPlayerWeekScore.team}, Week ${allTimeStats.highestPlayerWeekScore.week} ${allTimeStats.highestPlayerWeekScore.season}`
+                        },
+                        {
+                            id: 'highestTeamWeek',
+                            label: 'Highest Scoring Team (Single Week)',
+                            value: allTimeStats.highestTeamWeekScore.team,
+                            sub: `${allTimeStats.highestTeamWeekScore.score} pts — Week ${allTimeStats.highestTeamWeekScore.week} ${allTimeStats.highestTeamWeekScore.season}`
+                        },
+                        {
+                            id: 'mostTransactions',
+                            label: 'Most Transactions in a Season',
+                            value: allTimeStats.mostTx.team,
+                            sub: `${allTimeStats.mostTx.count} transactions in ${allTimeStats.mostTx.season}`
+                        },
+                        {
+                            id: 'largestMargin',
+                            label: 'Largest Margin of Victory',
+                            value: allTimeStats.largestMargin.winner,
+                            sub: `Won by ${allTimeStats.largestMargin.margin} pts vs ${allTimeStats.largestMargin.loser} — Week ${allTimeStats.largestMargin.week} ${allTimeStats.largestMargin.season}`
+                        },
+                        {
+                            id: 'mostSeasonPoints',
+                            label: 'Most Points in a Single Season',
+                            value: allTimeStats.mostSeasonPoints.team,
+                            sub: `${allTimeStats.mostSeasonPoints.pts} pts in ${allTimeStats.mostSeasonPoints.season}`
+                        },
+                        {
+                            id: 'mostTrades',
+                            label: 'Most Trades in a Season',
+                            value: allTimeStats.mostTrades.team,
+                            sub: `${allTimeStats.mostTrades.count} trades in ${allTimeStats.mostTrades.season}`
+                        },
+                        {
+                            id: 'biggestWeekEver',
+                            label: 'Biggest Week Ever (Whole League)',
+                            value: `Week ${allTimeStats.highestTeamWeekScore.week} ${allTimeStats.highestTeamWeekScore.season}`,
+                            sub: `Led by ${allTimeStats.highestTeamWeekScore.team} with ${allTimeStats.highestTeamWeekScore.score} pts`
+                        },
+                        {
+                            id: 'mostPlayoffPoints',
+                            label: 'Most Points in a Playoff Game',
+                            value: allTimeStats.mostPlayoffPoints.team,
+                            sub: `${allTimeStats.mostPlayoffPoints.score} pts — Week ${allTimeStats.mostPlayoffPoints.week} ${allTimeStats.mostPlayoffPoints.season}`
+                        },
+                        {
+                            id: 'largestPlayoffMargin',
+                            label: 'Largest Playoff Margin of Victory',
+                            value: allTimeStats.largestPlayoffMargin.winner,
+                            sub: `Won by ${allTimeStats.largestPlayoffMargin.margin} pts vs ${allTimeStats.largestPlayoffMargin.loser} in ${allTimeStats.largestPlayoffMargin.season}`
+                        },
+                        {
+                            id: 'bestRecord',
+                            label: 'Best Single Season Record',
+                            value: allTimeStats.bestRecord.team,
+                            sub: `${allTimeStats.bestRecord.wins}-${allTimeStats.bestRecord.losses} in ${allTimeStats.bestRecord.season}`
+                        },
+                        {
+                            id: 'bestPlusMinus',
+                            label: 'Best Single Season +/-',
+                            value: allTimeStats.bestPlusMinus.team,
+                            sub: `+${Math.round(allTimeStats.bestPlusMinus.pm * 10) / 10} in ${allTimeStats.bestPlusMinus.season}`
+                        },
+                        {
+                            id: 'worstRecord',
+                            label: 'Worst Single Season Record',
+                            value: allTimeStats.worstRecord.team,
+                            sub: `${allTimeStats.worstRecord.wins}-${allTimeStats.worstRecord.losses} in ${allTimeStats.worstRecord.season}`
+                        },
+                        {
+                            id: 'worstPlusMinus',
+                            label: 'Worst Single Season +/-',
+                            value: allTimeStats.worstPlusMinus.team,
+                            sub: `${Math.round(allTimeStats.worstPlusMinus.pm * 10) / 10} in ${allTimeStats.worstPlusMinus.season}`
+                        },
+                        {
+                            id: 'mostWeeksHighScorer',
+                            label: 'Most Weeks as Top Scorer in a Season',
+                            value: allTimeStats.mostWeeksHighScorer.team,
+                            sub: `${allTimeStats.mostWeeksHighScorer.count} weeks in ${allTimeStats.mostWeeksHighScorer.season}`
+                        },
+                        {
+                            id: 'closestChampionship',
+                            label: 'Closest Championship Game',
+                            value: allTimeStats.closestChampionship.winner,
+                            sub: `Won by ${allTimeStats.closestChampionship.margin} pts vs ${allTimeStats.closestChampionship.loser} in ${allTimeStats.closestChampionship.season}`
+                        }
+                    ];
+
+                    // Franchise cornerstones
+                    log('Computing franchise cornerstones...', 'heading');
+                    const franchiseData = {};
+                    Object.entries(allTimePlayerData).forEach(([teamName, players]) => {
+                        const sorted = Object.entries(players)
+                            .map(([playerId, data]) => {
+                                const player = playerDb[playerId];
+                                return {
+                                    playerId,
+                                    name: player ? `${player.first_name} ${player.last_name}` : 'Unknown',
+                                    position: player?.position || '—',
+                                    seasons: data.seasons.length,
+                                    years: data.seasons.sort().join(', '),
+                                    points: Math.round(data.points * 10) / 10
+                                };
+                            })
                             .filter(p => p.name !== 'Unknown' && p.position !== 'DEF' && p.position !== 'K')
-.sort((a, b) => b.points - a.points)
-.slice(0, 3);
-
+                            .sort((a, b) => b.points - a.points)
+                            .slice(0, 3);
                         franchiseData[teamName] = sorted;
-                        });
+                    });
 
-                        // Step 5: Save to Firebase
-                        log('Saving to Firebase...', 'heading');
+                    // Save to Firebase
+                    log('Saving to Firebase...', 'heading');
+                    await set(ref(db, 'franchise-cornerstones'), null);
+                    await set(ref(db, 'all-time-stats'), null);
 
-                        // Sanitize team name keys for Firebase
-                        const sanitizedFranchiseData = {};
-                        Object.entries(franchiseData).forEach(([teamName, players]) => {
-                            const safeKey = teamName.replace(/[.#$\/\[\]]/g, '_');
-                            sanitizedFranchiseData[safeKey] = players;
-                        });
+                    const sanitizedFranchiseData = {};
+                    Object.entries(franchiseData).forEach(([teamName, players]) => {
+                        const safeKey = teamName.replace(/[.#$\/\[\]]/g, '_');
+                        sanitizedFranchiseData[safeKey] = players;
+                    });
 
-                        await set(ref(db, 'franchise-cornerstones'), null);
-                        await set(ref(db, 'franchise-cornerstones'), sanitizedFranchiseData);
+                    await set(ref(db, 'franchise-cornerstones'), sanitizedFranchiseData);
+                    log('✓ Franchise cornerstones saved!', 'success');
 
-                    // Step 6: Compute home page all-time stats
-                    log('Computing all-time stats...', 'heading');
-                    const allTimeStats = computeAllTimeStats(allTimeData, playerDb);
-                    await set(ref(db, 'all-time-stats'), allTimeStats);
+                    await set(ref(db, 'all-time-stats'), statsPool);
+                    
                     log('✓ All-time stats saved!', 'success');
-
+                    console.log('=== ALL TIME RECORDS ===');
+                    statsPool.forEach(stat => {
+                    console.log(`${stat.label}: ${stat.value} — ${stat.sub}`);
+                    });
+                    
                     log('Rebuild complete!', 'success');
                     rebuildBtn.textContent = 'Rebuild Complete ✓';
 
@@ -249,51 +630,6 @@
                     rebuildBtn.textContent = 'Retry Rebuild';
                 }
             });
-
-            function computeAllTimeStats(allTimeData, playerDb) {
-                let mostSeasonsPlayer = null;
-                let mostSeasonsCount = 0;
-                let mostSeasonsTeam = null;
-
-                let highestScorerPlayer = null;
-                let highestScorerPoints = 0;
-                let highestScorerTeam = null;
-
-                let mostLoyalTeam = null;
-                let mostLoyalCount = 0;
-
-                Object.entries(allTimeData).forEach(([teamName, players]) => {
-                    const uniquePlayers = Object.keys(players).length;
-                    if (uniquePlayers < mostLoyalCount || mostLoyalCount === 0) {
-                        mostLoyalCount = uniquePlayers;
-                        mostLoyalTeam = teamName;
-                    }
-
-                    Object.entries(players).forEach(([playerId, data]) => {
-                        const player = playerDb[playerId];
-                        const name = player ? `${player.first_name} ${player.last_name}` : null;
-                        if (!name) return;
-
-                        if (data.seasons.length > mostSeasonsCount) {
-                            mostSeasonsCount = data.seasons.length;
-                            mostSeasonsPlayer = name;
-                            mostSeasonsTeam = teamName;
-                        }
-
-                        if (data.points > highestScorerPoints) {
-                            highestScorerPoints = data.points;
-                            highestScorerPlayer = name;
-                            highestScorerTeam = teamName;
-                        }
-                    });
-                });
-
-                return {
-                    mostLoyalTeam: { team: mostLoyalTeam, value: mostLoyalCount },
-                    mostSeasonsPlayer: { player: mostSeasonsPlayer, team: mostSeasonsTeam, seasons: mostSeasonsCount },
-                    highestScorerPlayer: { player: highestScorerPlayer, team: highestScorerTeam, points: Math.round(highestScorerPoints * 10) / 10 }
-                };
-            }
 
         })();
     </script>

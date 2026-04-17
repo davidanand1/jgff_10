@@ -85,7 +85,17 @@
                 </div>
             </div>
         </section>
-
+       <!-- ── ALL TIME STATS ── -->
+            <section class="section">
+                <div class="container">
+                    <h2 class="section-title">Records Snapshot</h2>
+                    <div id="allTimeStats" class="all-time-stats-grid">
+                        <div class="skeleton skeleton-card"></div>
+                        <div class="skeleton skeleton-card"></div>
+                        <div class="skeleton skeleton-card"></div>
+                    </div>
+                </div>
+            </section>
         <!-- ── LEAGUE CHAT ── -->
         <section class="section section-dark">
             <div class="container">
@@ -124,8 +134,7 @@
     <script src="/js/nav.js"></script>
     <script type="module">
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js';
-        import { getDatabase, ref, push, onValue, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-database.js';
-
+        import { getDatabase, ref, push, onValue, serverTimestamp, get } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-database.js';
         (async () => {
             // Wait for full page load to ensure config.js is ready
             await new Promise(resolve => {
@@ -311,6 +320,35 @@
                 }
             }
 
+            // ── All Time Stats ──
+// ── All Time Stats ──
+async function fetchAllTimeStats() {
+    try {
+        const snapshot = await get(ref(db, 'all-time-stats'));
+        const statsPool = snapshot.val();
+        console.log('stats pool:', statsPool);
+        if (!statsPool || !statsPool.length) {
+            document.getElementById('allTimeStats').innerHTML = '<p style="color:var(--text-muted)">No stats yet.</p>';
+            return;
+        }
+
+        // Pick 3 random stats
+        const shuffled = [...statsPool].sort(() => Math.random() - 0.5);
+        const selected = shuffled.slice(0, 3);
+
+        document.getElementById('allTimeStats').innerHTML = selected.map(stat => `
+            <div class="all-time-stat-card card">
+                <span class="all-time-stat-label">${stat.label}</span>
+                <span class="all-time-stat-value">${stat.value}</span>
+                <span class="all-time-stat-sub">${stat.sub}</span>
+            </div>
+        `).join('');
+
+    } catch (err) {
+        console.error('All time stats error:', err);
+    }
+}
+
             // ── League Chat ──
             function initChat() {
                 const chatRef = ref(db, 'league-chat');
@@ -444,6 +482,7 @@
             // ── Init ──
             fetchSleeperData();
             fetchNews();
+            fetchAllTimeStats();
             initChat();
 
         })();
