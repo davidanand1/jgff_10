@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JG&FF | Rulebook</title>
+    <link rel="icon" href="/assets/favicon.ico" type="image/x-icon">
+    <link rel="stylesheet" href="/css/global.css">
+    <link rel="stylesheet" href="/css/nav.css">
+    <link rel="stylesheet" href="/css/article.css">
+</head>
+<body>
+    <div class="page-wrapper">
+
+        <section class="page-header">
+            <div class="container">
+                <button class="btn btn-back" id="backBtn">← Back to Rulebook</button>
+                <div id="articleHeader">
+                    <div class="skeleton skeleton-text" style="width:60%;height:2rem;"></div>
+                </div>
+            </div>
+        </section>
+
+        <section class="section">
+            <div class="container article-layout">
+                <div id="articleBody" class="article-body">
+                    <div class="skeleton skeleton-text"></div>
+                    <div class="skeleton skeleton-text"></div>
+                    <div class="skeleton skeleton-text"></div>
+                </div>
+            </div>
+        </section>
+
+    </div>
+
+    <script src="/js/config.js"></script>
+    <script src="/js/nav.js"></script>
+    <script type="module">
+        (async () => {
+            await new Promise(resolve => {
+                if (document.readyState === 'complete' && window.CONFIG) resolve();
+                else {
+                    const check = setInterval(() => {
+                        if (window.CONFIG) { clearInterval(check); resolve(); }
+                    }, 10);
+                }
+            });
+
+            const { GOOGLE_API_KEY } = window.CONFIG;
+
+            const params = new URLSearchParams(window.location.search);
+            const docId = params.get('id');
+
+            if (!docId) {
+                document.getElementById('articleBody').innerHTML =
+                    '<p style="color:var(--text-muted)">Document not found.</p>';
+                return;
+            }
+
+            // Smart back button
+            document.getElementById('backBtn').addEventListener('click', () => {
+                if (document.referrer && document.referrer.includes(window.location.hostname)) {
+                    history.back();
+                } else {
+                    window.location.href = '/rulebook.html';
+                }
+            });
+
+            async function fetchDoc() {
+                try {
+                    const url = `https://www.googleapis.com/drive/v3/files/${docId}/export?mimeType=text/html&key=${GOOGLE_API_KEY}`;
+                    const res = await fetch(url);
+
+                    if (!res.ok) {
+                        document.getElementById('articleBody').innerHTML =
+                            '<p style="color:var(--text-muted)">Could not load document.</p>';
+                        return;
+                    }
+
+                    const html = await res.text();
+                    const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+                    const bodyContent = bodyMatch ? bodyMatch[1] : html;
+
+                    const parser = new DOMParser();
+                    const docDom = parser.parseFromString(bodyContent, 'text/html');
+
+docDom.querySelectorAll('[style]').forEach(el => {
+    const style = el.getAttribute('style');
+    // Keep only formatting styles, remove font/color/background
+    const cleaned = (style || '')
+        .split(';')
+        .filter(s => {
+            const prop = s.split(':')[0].trim().toLowerCase();
+            return [
+                'font-weight',
+                'font-style',
+                'text-decoration',
+                'margin-left',
+                'padding-left',
+                'text-align',
+                'list-style-type'
+            ].includes(prop);
+        })
+        .join(';');
+    if (cleaned) {
+        el.setAttribute('style', cleaned);
+    } else {
+        el.removeAttribute('style');
+    }
+});
+docDom.querySelectorAll('[class]').forEach(el => el.removeAttribute('class'));
+
+                    const blocks = Array.from(docDom.body.children);
+                    const nonEmpty = blocks.filter(b => b.textContent.trim().length > 0);
+
+                    const titleText = nonEmpty[0]?.textContent.trim() || 'Rulebook';
+                    const subtitleText = nonEmpty[1]?.textContent.trim() || '';
+                    const bodyBlocks = nonEmpty.slice(2);
+
+                    document.title = `JG&FF | ${titleText}`;
+
+                    document.getElementById('articleHeader').innerHTML = `
+                        <h1 class="article-title">${titleText}</h1>
+                        ${subtitleText ? `<p class="article-subtitle">${subtitleText}</p>` : ''}
+                    `;
+
+                    const bodyHtml = bodyBlocks.map(block => {
+                        const tag = block.tagName?.toLowerCase();
+                        const text = block.innerHTML;
+                        if (!text.trim()) return '';
+                        if (tag === 'h1') return `<h1 class="doc-h1">${text}</h1>`;
+                        if (tag === 'h2') return `<h2 class="doc-h2">${text}</h2>`;
+                        if (tag === 'h3') return `<h3 class="doc-h3">${text}</h3>`;
+                        if (tag === 'table') return `
+                            <div class="table-wrapper">
+                                <table>${block.innerHTML}</table>
+                            </div>
+                        `;
+                        return `<p class="doc-p">${text}</p>`;
+                    }).join('');
+
+                    document.getElementById('articleBody').innerHTML = `
+                        <div class="doc-content">${bodyHtml}</div>
+                    `;
+
+                } catch (err) {
+                    console.error('Doc fetch error:', err);
+                    document.getElementById('articleBody').innerHTML =
+                        '<p style="color:var(--text-muted)">Error loading document.</p>';
+                }
+            }
+
+            fetchDoc();
+
+        })();
+    </script>
+</body>
+</html>

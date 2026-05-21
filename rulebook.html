@@ -21,66 +21,164 @@
             </div>
         </section>
 
-        <!-- ── RULES LIST ── -->
+        <!-- ── FEATURED RULEBOOK ── -->
         <section class="section">
             <div class="container">
-                <div id="rulebookList" class="rulebook-list">
-                    <div class="skeleton skeleton-text"></div>
-                    <div class="skeleton skeleton-text"></div>
-                    <div class="skeleton skeleton-text"></div>
-                    <div class="skeleton skeleton-text"></div>
-                    <div class="skeleton skeleton-text"></div>
+                <div id="featuredRulebook">
+                    <div class="skeleton skeleton-card" style="height:280px;"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ── ADDITIONAL DOCS ── -->
+        <section class="section section-dark">
+            <div class="container">
+                <h2 class="section-title">Additional Documents</h2>
+                <div id="additionalDocs" class="rulebook-grid">
+                    <div class="skeleton skeleton-card"></div>
+                    <div class="skeleton skeleton-card"></div>
                 </div>
             </div>
         </section>
 
     </div>
 
-    <!-- Scripts -->
     <script src="/js/config.js"></script>
     <script src="/js/nav.js"></script>
     <script type="module">
         (async () => {
             await new Promise(resolve => {
-                if (document.readyState === 'complete') resolve();
-                else window.addEventListener('load', resolve);
+                if (document.readyState === 'complete' && window.CONFIG) resolve();
+                else {
+                    const check = setInterval(() => {
+                        if (window.CONFIG) { clearInterval(check); resolve(); }
+                    }, 10);
+                }
             });
 
             const { GOOGLE_API_KEY, DRIVE_FOLDERS } = window.CONFIG;
+            const PINNED_DOC_ID = '1PIL6w56tPyOQw_GpvNwt1NyWqtXcQfWpL-2k7BKScqg';
 
-            async function fetchRulebook() {
+            // ── Fetch and render pinned doc ──
+            async function fetchPinnedDoc() {
                 try {
-                    const url = `https://www.googleapis.com/drive/v3/files?q='${DRIVE_FOLDERS.RULEBOOK}'+in+parents+and+mimeType='application/pdf'&orderBy=modifiedTime+desc&fields=files(id,name,modifiedTime)&key=${GOOGLE_API_KEY}`;
+                    const url = `https://www.googleapis.com/drive/v3/files/${PINNED_DOC_ID}/export?mimeType=text/html&key=${GOOGLE_API_KEY}`;
                     const res = await fetch(url);
-                    const data = await res.json();
-                    const files = data.files || [];
 
-                    if (files.length === 0) {
-                        document.getElementById('rulebookList').innerHTML =
-                            '<p style="color:var(--text-muted)">No rulebook files found.</p>';
+                    if (!res.ok) {
+                        document.getElementById('featuredRulebook').innerHTML =
+                            '<p style="color:var(--text-muted)">Could not load rulebook.</p>';
                         return;
                     }
 
-                    document.getElementById('rulebookList').innerHTML = files.map(f => `
-                        <a href="https://drive.google.com/file/d/${f.id}/view"
-                           target="_blank"
-                           class="rulebook-item">
-                            <div class="rulebook-icon">📄</div>
-                            <div class="rulebook-info">
-                                <span class="rulebook-name">${cleanName(f.name)}</span>
-                                <span class="rulebook-date">Updated ${formatDate(f.modifiedTime)}</span>
+                    const html = await res.text();
+                    const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+                    const bodyContent = bodyMatch ? bodyMatch[1] : html;
+
+                    const parser = new DOMParser();
+                    const docDom = parser.parseFromString(bodyContent, 'text/html');
+
+docDom.querySelectorAll('[style]').forEach(el => {
+    const style = el.getAttribute('style');
+    // Keep only formatting styles, remove font/color/background
+    const cleaned = (style || '')
+        .split(';')
+        .filter(s => {
+            const prop = s.split(':')[0].trim().toLowerCase();
+            return [
+                'font-weight',
+                'font-style',
+                'text-decoration',
+                'margin-left',
+                'padding-left',
+                'text-align',
+                'list-style-type'
+            ].includes(prop);
+        })
+        .join(';');
+    if (cleaned) {
+        el.setAttribute('style', cleaned);
+    } else {
+        el.removeAttribute('style');
+    }
+});
+docDom.querySelectorAll('[class]').forEach(el => el.removeAttribute('class'));
+
+                    const blocks = Array.from(docDom.body.children);
+                    const nonEmpty = blocks.filter(b => b.textContent.trim().length > 0);
+
+                    const titleText = nonEmpty[0]?.textContent.trim() || 'Rulebook';
+                    const subtitleText = nonEmpty[1]?.textContent.trim() || '';
+                    const bodyBlocks = nonEmpty.slice(2);
+
+                    const bodyHtml = bodyBlocks.map(block => {
+                        const tag = block.tagName?.toLowerCase();
+                        const text = block.innerHTML;
+                        if (!text.trim()) return '';
+                        if (tag === 'h1') return `<h1 class="doc-h1">${text}</h1>`;
+                        if (tag === 'h2') return `<h2 class="doc-h2">${text}</h2>`;
+                        if (tag === 'h3') return `<h3 class="doc-h3">${text}</h3>`;
+                        if (tag === 'table') return `
+                            <div class="table-wrapper">
+                                <table>${block.innerHTML}</table>
+                            </div>
+                        `;
+                        return `<p class="doc-p">${text}</p>`;
+                    }).join('');
+
+                    document.getElementById('featuredRulebook').innerHTML = `
+                        <div class="featured-rulebook card">
+                            <div class="featured-rulebook-header">
+                                <h2 class="featured-rulebook-title">${titleText}</h2>
+                                ${subtitleText ? `<p class="featured-rulebook-subtitle">${subtitleText}</p>` : ''}
+                                <a href="/rulebook-article.html?id=${PINNED_DOC_ID}" class="btn btn-primary">
+                                    Open Full Document →
+                                </a>
+                            </div>
+                            <div class="featured-rulebook-preview doc-content">
+                                ${bodyHtml}
+                            </div>
+                        </div>
+                    `;
+
+                } catch (err) {
+                    console.error('Pinned doc error:', err);
+                }
+            }
+
+            // ── Fetch additional docs ──
+            async function fetchAdditionalDocs() {
+                try {
+                    const url = `https://www.googleapis.com/drive/v3/files?q='${DRIVE_FOLDERS.RULEBOOK}'+in+parents&orderBy=modifiedTime+desc&fields=files(id,name,mimeType,modifiedTime)&key=${GOOGLE_API_KEY}`;
+                    const res = await fetch(url);
+                    const data = await res.json();
+                    console.log('Rulebook folder files:', data);
+                    const files = (data.files || []).filter(f => f.id !== PINNED_DOC_ID);
+
+                    if (files.length === 0) {
+                        document.getElementById('additionalDocs').innerHTML =
+                            '<p style="color:var(--text-muted)">No additional documents.</p>';
+                        return;
+                    }
+
+                    document.getElementById('additionalDocs').innerHTML = files.map(f => `
+                        <a href="/rulebook-article.html?id=${f.id}" class="rulebook-doc-card card">
+                            <div class="rulebook-doc-icon">📄</div>
+                            <div class="rulebook-doc-info">
+                                <span class="rulebook-doc-name">${cleanName(f.name)}</span>
+                                <span class="rulebook-doc-date">Updated ${formatDate(f.modifiedTime)}</span>
                             </div>
                             <span class="rulebook-arrow">→</span>
                         </a>
                     `).join('');
 
                 } catch (err) {
-                    console.error('Rulebook fetch error:', err);
+                    console.error('Additional docs error:', err);
                 }
             }
 
             function cleanName(filename) {
-                return filename.replace(/\.pdf$/i, '').replace(/[_-]/g, ' ');
+                return filename.replace(/[_-]/g, ' ');
             }
 
             function formatDate(dateStr) {
@@ -89,7 +187,8 @@
                 });
             }
 
-            fetchRulebook();
+            fetchPinnedDoc();
+            fetchAdditionalDocs();
 
         })();
     </script>
