@@ -76,9 +76,11 @@
                     const url = `https://www.googleapis.com/drive/v3/files?q='${DRIVE_FOLDERS.PODCASTS}'+in+parents&orderBy=name+desc&fields=files(id,name,mimeType,createdTime)&key=${GOOGLE_API_KEY}`;
                     const res = await fetch(url);
                     const data = await res.json();
+                    console.log('Podcast folder response:', data);
                     const files = (data.files || []).filter(f =>
                         f.mimeType.startsWith('audio/') ||
-                        f.name.match(/\.(mp3|m4a|wav|ogg)$/i)
+                        f.mimeType.startsWith('video/') ||
+                        f.name.match(/\.(mp3|m4a|wav|ogg|mp4|mov)$/i)
                     );
 
                     if (files.length === 0) {
@@ -99,12 +101,21 @@
                                 <h2 class="podcast-featured-title">${featuredTitle}</h2>
                                 ${featuredDate ? `<p class="podcast-date">${featuredDate}</p>` : ''}
                             </div>
-                            <audio 
-                                controls 
-                                class="podcast-player"
-                                src="https://drive.google.com/uc?export=download&id=${featured.id}">
-                                Your browser does not support the audio element.
-                            </audio>
+                            ${featured.mimeType?.startsWith('video/') || featured.name.match(/\.(mp4|mov)$/i) ? `
+                               <iframe
+    src="https://drive.google.com/file/d/${featured.id}/preview"
+    class="podcast-player-video"
+    allow="autoplay"
+    allowfullscreen>
+</iframe>
+                            ` : `
+                                <audio 
+                                    controls 
+                                    class="podcast-player"
+                                    src="https://drive.google.com/uc?export=download&id=${featured.id}">
+                                    Your browser does not support the audio element.
+                                </audio>
+                            `}
                         </div>
                     `;
 
@@ -120,12 +131,19 @@
                                         ${extractPodcastDate(f.name) ? `<span class="podcast-row-date">${extractPodcastDate(f.name)}</span>` : ''}
                                     </div>
                                 </div>
-                                <audio 
-                                    controls 
-                                    class="podcast-player-small"
-                                    src="https://drive.google.com/uc?export=download&id=${f.id}">
-                                </audio>
-                            </div>
+                                ${f.mimeType?.startsWith('video/') || f.name.match(/\.(mp4|mov)$/i) ? `
+                                   <iframe
+    src="https://drive.google.com/file/d/${f.id}/preview"
+    class="podcast-player-small-video"
+    allow="autoplay">
+</iframe>
+                                ` : `
+                                    <audio 
+                                        controls 
+                                        class="podcast-player-small"
+                                        src="https://drive.google.com/uc?export=download&id=${f.id}">
+                                    </audio>
+                                `}
                         `).join('')
                         : '<p style="color:var(--text-muted)">No previous episodes.</p>';
 

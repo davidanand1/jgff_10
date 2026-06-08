@@ -124,9 +124,45 @@
         const parser = new DOMParser();
         const docDom = parser.parseFromString(bodyContent, 'text/html');
 
-        // Strip all inline styles and Google classes
-        docDom.querySelectorAll('[style]').forEach(el => el.removeAttribute('style'));
+        // Strip colors/fonts but keep formatting
+        docDom.querySelectorAll('[style]').forEach(el => {
+            const style = el.getAttribute('style');
+            const cleaned = (style || '')
+                .split(';')
+                .filter(s => {
+                    const prop = s.split(':')[0].trim().toLowerCase();
+                    return [
+                        'font-weight',
+                        'font-style',
+                        'text-decoration',
+                        'margin-left',
+                        'padding-left',
+                        'text-align',
+                        'list-style-type'
+                    ].includes(prop);
+                })
+                .join(';');
+            if (cleaned) {
+                el.setAttribute('style', cleaned);
+            } else {
+                el.removeAttribute('style');
+            }
+        });
         docDom.querySelectorAll('[class]').forEach(el => el.removeAttribute('class'));
+
+        // Preserve bold, italic, underline from span styles
+        docDom.querySelectorAll('span').forEach(el => {
+            const style = el.getAttribute('style') || '';
+            if (style.includes('font-weight:700') || style.includes('font-weight: 700') || style.includes('font-weight:bold')) {
+                el.innerHTML = `<strong>${el.innerHTML}</strong>`;
+            }
+            if (style.includes('font-style:italic') || style.includes('font-style: italic')) {
+                el.innerHTML = `<em>${el.innerHTML}</em>`;
+            }
+            if (style.includes('text-decoration:underline') || style.includes('text-decoration: underline')) {
+                el.innerHTML = `<u>${el.innerHTML}</u>`;
+            }
+        });
 
         // Get all paragraphs/headings as text blocks
         const blocks = Array.from(docDom.body.children);
